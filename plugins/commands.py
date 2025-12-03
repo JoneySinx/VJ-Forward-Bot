@@ -59,10 +59,8 @@ async def restart(client, message):
 @Client.on_callback_query(filters.regex(r'^help'))
 async def helpcb(bot, query):
     buttons = [[
-        InlineKeyboardButton('🤔 ʜᴏᴡ ᴛᴏ ᴜsᴇ ᴍᴇ ❓', callback_data='how_to_use')
-    ],[
-        InlineKeyboardButton('Aʙᴏᴜᴛ ✨️', callback_data='about'),
-        InlineKeyboardButton('⚙ Sᴇᴛᴛɪɴɢs', callback_data='settings#main')
+        InlineKeyboardButton('Status ✨️', callback_data='status'),
+        InlineKeyboardButton('⚙ Settings', callback_data='settings#main')
     ],[
         InlineKeyboardButton('• back', callback_data='back')
     ]]
