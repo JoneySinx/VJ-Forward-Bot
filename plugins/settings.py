@@ -478,7 +478,7 @@ def extra_buttons():
        InlineKeyboardButton('🕹 Extensions',
                     callback_data=f'settings#get_extension')
        ],[
-       InlineKeyboardButton('⫷ Bᴀᴄᴋ',
+       InlineKeyboardButton('🏄 Bᴀᴄᴋ',
                     callback_data=f'settings#main')
        ]]
    return InlineKeyboardMarkup(buttons)
@@ -489,25 +489,25 @@ def extra_buttons():
 
 def main_buttons():
   buttons = [[
-       InlineKeyboardButton('🤖 Bᴏᴛs',
+       InlineKeyboardButton('🦹 Bots',
                     callback_data=f'settings#bots'),
-       InlineKeyboardButton('🏷 Cʜᴀɴɴᴇʟs',
+       InlineKeyboardButton('🧑‍🤝‍🧑 Channels',
                     callback_data=f'settings#channels')
        ],[
-       InlineKeyboardButton('🖋️ Cᴀᴘᴛɪᴏɴ',
+       InlineKeyboardButton('🖍️ Caption',
                     callback_data=f'settings#caption'),
-       InlineKeyboardButton('⏹ Bᴜᴛᴛᴏɴ',
+       InlineKeyboardButton('⚡ Button',
                     callback_data=f'settings#button')
        ],[
-       InlineKeyboardButton('🕵‍♀ Fɪʟᴛᴇʀs 🕵‍♀',
+       InlineKeyboardButton('🎨 Filters',
                     callback_data=f'settings#filters'),
-       InlineKeyboardButton('🗃 MᴏɴɢᴏDB',
+       InlineKeyboardButton('🌩️ MangoDB',
                     callback_data=f'settings#database')
        ],[
-       InlineKeyboardButton('Exᴛʀᴀ Sᴇᴛᴛɪɴɢs 🧪',
+       InlineKeyboardButton('🧩 Extra Setting',
                     callback_data=f'settings#extra')
        ],[
-       InlineKeyboardButton('⫷ Bᴀᴄᴋ',
+       InlineKeyboardButton('🏄 Back',
                     callback_data=f'help')
        ]]
   return InlineKeyboardMarkup(buttons)
@@ -578,7 +578,7 @@ def maxsize_button(size):
        InlineKeyboardButton('-100',
                     callback_data=f'settings#maxupdate_size_-{size - 100}')
        ],[
-       InlineKeyboardButton('back',
+       InlineKeyboardButton('Back',
                     callback_data="settings#extra")
      ]]
   return InlineKeyboardMarkup(buttons)
@@ -617,7 +617,7 @@ def size_button(size):
        InlineKeyboardButton('-100',
                     callback_data=f'settings#update_size_-{size - 100}')
        ],[
-       InlineKeyboardButton('back',
+       InlineKeyboardButton('Back',
                     callback_data="settings#extra")
      ]]
   return InlineKeyboardMarkup(buttons)
@@ -660,7 +660,7 @@ async def filters_buttons(user_id):
        InlineKeyboardButton('✅' if filters['audio'] else '❌',
                     callback_data=f'settings#updatefilter-audio-{filters["audio"]}')
        ],[
-       InlineKeyboardButton('⫷ back',
+       InlineKeyboardButton('🏄 Back',
                     callback_data="settings#main"),
        InlineKeyboardButton('next ⫸',
                     callback_data="settings#nextfilters")
@@ -706,7 +706,7 @@ async def next_filters_buttons(user_id):
        InlineKeyboardButton('✅' if filter['protect'] else '❌',
                     callback_data=f'settings#updatefilter-protect-{filter["protect"]}')
        ],[
-       InlineKeyboardButton('⫷ back', 
+       InlineKeyboardButton('🏄 Back', 
                     callback_data="settings#filters"),
        InlineKeyboardButton('End ⫸',
                     callback_data="settings#main")
