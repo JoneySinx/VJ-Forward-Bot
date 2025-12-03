@@ -21,8 +21,7 @@ START_TIME = time.time()
 # Ask Doubt on telegram @KingVJ01
 
 main_buttons = [[
-    InlineKeyboardButton('👨‍💻 Help', callback_data='help')
-],[
+    InlineKeyboardButton('👨‍💻 Help', callback_data='help'),
     InlineKeyboardButton('⚙ Settings', callback_data='settings#main')
 ]]
 
