@@ -21,8 +21,8 @@ START_TIME = time.time()
 # Ask Doubt on telegram @KingVJ01
 
 main_buttons = [[
-    InlineKeyboardButton('👨‍💻 Help', callback_data='help'),
-    InlineKeyboardButton('⚙ Settings', callback_data='settings#main')
+    InlineKeyboardButton('🦹 Help', callback_data='help'),
+    InlineKeyboardButton('🚀 Settings', callback_data='settings#main')
 ]]
 
 # Don't Remove Credit Tg - @VJ_Botz
@@ -59,10 +59,10 @@ async def restart(client, message):
 @Client.on_callback_query(filters.regex(r'^help'))
 async def helpcb(bot, query):
     buttons = [[
-        InlineKeyboardButton('Status ✨️', callback_data='status'),
-        InlineKeyboardButton('⚙ Settings', callback_data='settings#main')
+        InlineKeyboardButton('⚡ Status', callback_data='status'),
+        InlineKeyboardButton('🚀 Settings', callback_data='settings#main')
     ],[
-        InlineKeyboardButton('• back', callback_data='back')
+        InlineKeyboardButton('🏄 Back', callback_data='back')
     ]]
     reply_markup = InlineKeyboardMarkup(buttons)
     await query.message.edit_text(text=Script.HELP_TXT, reply_markup=reply_markup)
@@ -99,8 +99,8 @@ async def back(bot, query):
 @Client.on_callback_query(filters.regex(r'^about'))
 async def about(bot, query):
     buttons = [[
-         InlineKeyboardButton('• back', callback_data='back'),
-         InlineKeyboardButton('Stats ✨️', callback_data='status')
+         InlineKeyboardButton('🏄 Back', callback_data='back'),
+         InlineKeyboardButton('⚡ Stats', callback_data='status')
     ]]
     reply_markup = InlineKeyboardMarkup(buttons)
     await query.message.edit_text(
@@ -119,8 +119,8 @@ async def status(bot, query):
     forwardings = await db.forwad_count()
     upt = await get_bot_uptime(START_TIME)
     buttons = [[
-        InlineKeyboardButton('• back', callback_data='back'),
-        InlineKeyboardButton('System Stats ✨️', callback_data='systm_sts'),
+        InlineKeyboardButton('🏄 Back', callback_data='back'),
+        InlineKeyboardButton('♻️ System Stats', callback_data='systm_sts'),
     ]]
     reply_markup = InlineKeyboardMarkup(buttons)
     await query.message.edit_text(
