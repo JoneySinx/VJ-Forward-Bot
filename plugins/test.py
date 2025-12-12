@@ -4,7 +4,7 @@ import logging
 from typing import Union, Optional, AsyncGenerator
 
 # --- Hydrogram Imports ---
-from hydrogram import Client, filters, types
+from hydrogram import Client, filters, types, enums
 from hydrogram.errors import (
     FloodWait,
     AccessTokenExpired,
@@ -197,7 +197,7 @@ async def iter_messages(
 ) -> Optional[AsyncGenerator["types.Message", None]]:
     """
     Optimized message iterator
-    filters: list of strings representing prohibited media types (e.g., ['video', 'photo'])
+    filters: list of strings representing prohibited media types (e.g., ['video', 'photo', 'link'])
     """
     current = offset
     while True:
@@ -227,15 +227,24 @@ async def iter_messages(
             # Filter Logic: Check if message type is in the forbidden list
             is_filtered = False
             if filters:
-                # Check standard media types
+                # 1. Standard Media Check
                 for media_type in ['photo', 'video', 'document', 'audio', 'voice', 'sticker', 'animation']:
                     if getattr(message, media_type, None) and media_type in filters:
                         is_filtered = True
                         break
                 
-                # Check text specifically
+                # 2. Text Check
                 if message.text and 'text' in filters:
                      is_filtered = True
+
+                # 3. Link Filter Check (Advanced)
+                # If 'link' is in filters, block messages containing URLs or Text Links
+                if not is_filtered and 'link' in filters:
+                    entities = (message.entities or []) + (message.caption_entities or [])
+                    for entity in entities:
+                        if entity.type in [enums.MessageEntityType.URL, enums.MessageEntityType.TEXT_LINK]:
+                            is_filtered = True
+                            break
 
             if is_filtered:
                 yield "FILTERED"
@@ -282,9 +291,17 @@ def parse_buttons(text, markup=True):
 
 @Client.on_message(filters.private & filters.command('reset'))
 async def reset_settings(bot, m):
-    # Fetch default config from a dummy user or hardcoded defaults
-    # Re-using logic from database.py would be cleaner, but for now:
-    await db.update_configs(m.from_user.id, db.DEFAULT_CONFIG)
+    # Fetch default config from database logic (or hardcode fallback)
+    # Using hardcoded minimal default to avoid import loops with database.py
+    default_config = {
+        'caption': None,
+        'duplicate': True,
+        'filters': {
+            'poll': True, 'text': True, 'audio': True, 'voice': True, 'video': True,
+            'photo': True, 'document': True, 'animation': True, 'sticker': True, 'link': True
+        }
+    }
+    await db.update_configs(m.from_user.id, default_config)
     await m.reply("✅ Settings have been reset to default.")
 
 @Client.on_message(filters.command('resetall') & filters.user(Config.BOT_OWNER))
@@ -295,9 +312,19 @@ async def reset_all_users(bot, message):
     success = 0
     failed = 0
     
+    # Minimal Default
+    default_config = {
+        'caption': None,
+        'duplicate': True,
+        'filters': {
+            'poll': True, 'text': True, 'audio': True, 'voice': True, 'video': True,
+            'photo': True, 'document': True, 'animation': True, 'sticker': True, 'link': True
+        }
+    }
+    
     async for user in users:
         try:
-            await db.update_configs(user['id'], db.DEFAULT_CONFIG)
+            await db.update_configs(user['id'], default_config)
             success += 1
         except Exception:
             failed += 1
