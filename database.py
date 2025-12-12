@@ -3,6 +3,7 @@ from config import Config
 
 class Db:
     # --- Default Configurations (Memory Optimized) ---
+    # 'link': True added to allow links by default
     DEFAULT_CONFIG = {
         'caption': None,
         'duplicate': True,
@@ -14,7 +15,6 @@ class Db:
         'protect': None,
         'button': None,
         'db_uri': None,
-        'skip_duplicate': False,
         'filters': {
             'poll': True,
             'text': True,
@@ -24,7 +24,8 @@ class Db:
             'photo': True,
             'document': True,
             'animation': True,
-            'sticker': True
+            'sticker': True,
+            'link': True  # <-- New Link Filter
         }
     }
 
@@ -125,7 +126,15 @@ class Db:
         if user and 'configs' in user:
             # Merge with default to ensure new keys exist if schema changes
             config = self.DEFAULT_CONFIG.copy()
-            config.update(user['configs'])
+            # Deep merge filters to ensure 'link' key exists in old records
+            user_filters = user['configs'].get('filters', {})
+            config['filters'].update(user_filters)
+            
+            # Update rest of the config
+            user_conf_copy = user['configs'].copy()
+            user_conf_copy.pop('filters', None) # Remove filters to avoid overwrite
+            config.update(user_conf_copy)
+            
             return config
         return self.DEFAULT_CONFIG.copy()
 
@@ -136,7 +145,7 @@ class Db:
         filters = user_config.get('filters', {})
         
         for k, v in filters.items():
-            if v is False: # Check explicitly for False
+            if v is False: # If filter is False (Disabled), add to list to block it
                 filters_list.append(str(k))
         return filters_list
 
@@ -205,7 +214,6 @@ class Db:
 
     async def add_frwd(self, user_id):
         """Mark user as active forwarding"""
-        # Use upsert to prevent duplicates
         await self.nfy.update_one(
             {'user_id': int(user_id)}, 
             {'$set': {'user_id': int(user_id)}}, 
