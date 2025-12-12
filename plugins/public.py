@@ -1,99 +1,160 @@
-# Don't Remove Credit Tg - @VJ_Botz
-# Subscribe YouTube Channel For Amazing Bot https://youtube.com/@Tech_VJ
-# Ask Doubt on telegram @KingVJ01
-
 import re
-import asyncio 
-from .utils import STS
-from database import Db, db
-from config import temp 
-from script import Script
-from pyrogram import Client, filters, enums
-from pyrogram.errors import FloodWait 
-from pyrogram.errors.exceptions.not_acceptable_406 import ChannelPrivate as PrivateChat
-from pyrogram.errors.exceptions.bad_request_400 import ChannelInvalid, ChatAdminRequired, UsernameInvalid, UsernameNotModified, ChannelPrivate
-from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery, KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove
+import asyncio
+from hydrogram import Client, filters, enums
+from hydrogram.errors import (
+    ChannelPrivate, 
+    ChannelInvalid, 
+    UsernameInvalid, 
+    UsernameNotModified
+)
+from hydrogram.types import (
+    InlineKeyboardButton, 
+    InlineKeyboardMarkup, 
+    ReplyKeyboardMarkup, 
+    ReplyKeyboardRemove,
+    KeyboardButton
+)
 
-# Don't Remove Credit Tg - @VJ_Botz
-# Subscribe YouTube Channel For Amazing Bot https://youtube.com/@Tech_VJ
-# Ask Doubt on telegram @KingVJ01
+# --- Custom Modules ---
+from .utils import STS
+from database import db
+from config import Temp
+from script import Script
+
+# Regex for parsing Telegram Links
+# Support: t.me/c/123/456 (Private) & t.me/username/456 (Public)
+LINK_REGEX = re.compile(r"(?:https?://)?(?:t\.me|telegram\.me|telegram\.dog)/(?:c/)?(\d+|[a-zA-Z_0-9]+)/(\d+)$")
 
 @Client.on_message(filters.private & filters.command(["forward"]))
-async def run(bot, message):
-    buttons = []
-    btn_data = {}
+async def forward_command_handler(bot, message):
     user_id = message.from_user.id
+    
+    # 1. Check Bot/Userbot Availability
     _bot = await db.get_bot(user_id)
     if not _bot:
-      _bot = await db.get_userbot(user_id)
-      if not _bot:
-          return await message.reply("<code>You didn't added any bot. Please add a bot using /settings !</code>")
+        _bot = await db.get_userbot(user_id)
+        if not _bot:
+            return await message.reply(
+                "<b>⚠️ No Bot Found!</b>\nPlease add a Bot or Userbot in /settings first.",
+                quote=True
+            )
+
+    # 2. Check Target Channels
     channels = await db.get_user_channels(user_id)
     if not channels:
-       return await message.reply_text("please set a to channel in /settings before forwarding")
-    if len(channels) > 1:
-       for channel in channels:
-          buttons.append([KeyboardButton(f"{channel['title']}")])
-          btn_data[channel['title']] = channel['chat_id']
-       buttons.append([KeyboardButton("cancel")]) 
-       _toid = await bot.ask(message.chat.id, Script.TO_MSG.format(_bot['name'], _bot['username']), reply_markup=ReplyKeyboardMarkup(buttons, one_time_keyboard=True, resize_keyboard=True))
-       if _toid.text.startswith(('/', 'cancel')):
-          return await message.reply_text(Script.CANCEL, reply_markup=ReplyKeyboardRemove())
-       to_title = _toid.text
-       toid = btn_data.get(to_title)
-       if not toid:
-          return await message.reply_text("wrong channel choosen !", reply_markup=ReplyKeyboardRemove())
-    else:
-       toid = channels[0]['chat_id']
-       to_title = channels[0]['title']
-    fromid = await bot.ask(message.chat.id, Script.FROM_MSG, reply_markup=ReplyKeyboardRemove())
-    if fromid.text and fromid.text.startswith('/'):
-        await message.reply(Script.CANCEL)
-        return 
-    if fromid.text and not fromid.forward_date:
-        regex = re.compile("(https://)?(t\.me/|telegram\.me/|telegram\.dog/)(c/)?(\d+|[a-zA-Z_0-9]+)/(\d+)$")
-        match = regex.match(fromid.text.replace("?single", ""))
-        if not match:
-            return await message.reply('Invalid link')
-        chat_id = match.group(4)
-        last_msg_id = int(match.group(5))
-        if chat_id.isnumeric():
-            chat_id  = int(("-100" + chat_id))
-    elif fromid.forward_from_chat.type in [enums.ChatType.CHANNEL, 'supergroup']:
-        last_msg_id = fromid.forward_from_message_id
-        chat_id = fromid.forward_from_chat.username or fromid.forward_from_chat.id
-        if last_msg_id == None:
-           return await message.reply_text("**This may be a forwarded message from a group and sended by anonymous admin. instead of this please send last message link from group**")
-    else:
-        await message.reply_text("**invalid !**")
-        return 
-    try:
-        title = (await bot.get_chat(chat_id)).title
-  #  except ChannelInvalid:
-        #return await fromid.reply("**Given source chat is copyrighted channel/group. you can't forward messages from there**")
-    except (PrivateChat, ChannelPrivate, ChannelInvalid):
-        title = "private" if fromid.text else fromid.forward_from_chat.title
-    except (UsernameInvalid, UsernameNotModified):
-        return await message.reply('Invalid Link specified.')
-    except Exception as e:
-        return await message.reply(f'Errors - {e}')
-    skipno = await bot.ask(message.chat.id, Script.SKIP_MSG)
-    if skipno.text.startswith('/'):
-        await message.reply(Script.CANCEL)
-        return
-    forward_id = f"{user_id}-{skipno.id}"
-    buttons = [[
-        InlineKeyboardButton('Yes', callback_data=f"start_public_{forward_id}"),
-        InlineKeyboardButton('No', callback_data="close_btn")
-    ]]
-    reply_markup = InlineKeyboardMarkup(buttons)
-    await message.reply_text(
-        text=Script.DOUBLE_CHECK.format(botname=_bot['name'], botuname=_bot['username'], from_chat=title, to_chat=to_title, skip=skipno.text),
-        disable_web_page_preview=True,
-        reply_markup=reply_markup
-    )
-    STS(forward_id).store(chat_id, toid, int(skipno.text), int(last_msg_id))
+        return await message.reply(
+            "<b>⚠️ No Target Channel Found!</b>\nPlease add a Target Channel in /settings.",
+            quote=True
+        )
 
-# Don't Remove Credit Tg - @VJ_Botz
-# Subscribe YouTube Channel For Amazing Bot https://youtube.com/@Tech_VJ
-# Ask Doubt on telegram @KingVJ01
+    # 3. Select Target Channel
+    target_chat_id = None
+    target_title = None
+
+    if len(channels) > 1:
+        # Create Keyboard
+        buttons = []
+        chan_map = {} # Map title to ID
+        for channel in channels:
+            buttons.append([KeyboardButton(channel['title'])])
+            chan_map[channel['title']] = channel['chat_id']
+        
+        buttons.append([KeyboardButton("❌ Cancel")])
+        
+        question = await bot.ask(
+            message.chat.id, 
+            Script.TO_MSG, 
+            reply_markup=ReplyKeyboardMarkup(buttons, one_time_keyboard=True, resize_keyboard=True)
+        )
+        
+        if question.text in ["/cancel", "❌ Cancel"]:
+            return await message.reply(Script.CANCEL, reply_markup=ReplyKeyboardRemove())
+            
+        target_title = question.text
+        target_chat_id = chan_map.get(target_title)
+        
+        if not target_chat_id:
+            return await message.reply("<b>❌ Invalid Channel Selected!</b>", reply_markup=ReplyKeyboardRemove())
+    else:
+        # Auto-select if only one channel
+        target_chat_id = channels[0]['chat_id']
+        target_title = channels[0]['title']
+
+    # 4. Get Source Chat (Link or Forward)
+    # Remove keyboard before asking next question
+    await message.reply("...", reply_markup=ReplyKeyboardRemove()).delete()
+    
+    source_prompt = await bot.ask(message.chat.id, Script.FROM_MSG)
+    
+    if source_prompt.text and source_prompt.text.startswith('/'):
+        return await message.reply(Script.CANCEL)
+
+    chat_id = None
+    last_msg_id = None
+    source_title = "Private Chat"
+
+    # -- Logic: Parse Link --
+    if source_prompt.text and not source_prompt.forward_date:
+        match = LINK_REGEX.match(source_prompt.text.replace("?single", "").strip())
+        if not match:
+            return await message.reply('<b>❌ Invalid Post Link!</b>\nPlease send a valid link like <code>https://t.me/username/100</code>')
+        
+        identifier = match.group(1)
+        last_msg_id = int(match.group(2))
+        
+        if identifier.isdigit():
+            # Private Channel Link (t.me/c/12345/10) -> ID: -10012345
+            chat_id = int(f"-100{identifier}")
+        else:
+            # Public Username
+            chat_id = identifier
+
+    # -- Logic: Parse Forward --
+    elif source_prompt.forward_from_chat:
+        last_msg_id = source_prompt.forward_from_message_id
+        chat_id = source_prompt.forward_from_chat.id
+        source_title = source_prompt.forward_from_chat.title
+    else:
+        return await message.reply("<b>❌ Invalid Input!</b>\nPlease Forward a message from the channel or Send its Link.")
+
+    # -- Logic: Fetch Chat Title (Optional Check) --
+    try:
+        chat_info = await bot.get_chat(chat_id)
+        source_title = chat_info.title
+    except Exception:
+        # If bot can't access chat yet (e.g. userbot needed), keep default title
+        pass
+
+    # 5. Get Skip Count
+    skip_prompt = await bot.ask(message.chat.id, Script.SKIP_MSG)
+    
+    if skip_prompt.text.startswith('/'):
+        return await message.reply(Script.CANCEL)
+    
+    try:
+        skip_count = int(skip_prompt.text)
+    except ValueError:
+        return await message.reply("<b>❌ Error:</b> Please enter a valid number (Integer).")
+
+    # 6. Final Confirmation
+    forward_id = f"{user_id}-{skip_prompt.id}" # Unique ID based on message ID
+    
+    confirm_btn = [[
+        InlineKeyboardButton('✅ Yes, Start', callback_data=f"start_public_{forward_id}"),
+        InlineKeyboardButton('❌ No, Cancel', callback_data="close_btn")
+    ]]
+    
+    # Store Data in STS (In-Memory) before confirmation
+    STS(forward_id).store(chat_id, target_chat_id, skip_count, last_msg_id)
+    
+    await message.reply_text(
+        text=Script.DOUBLE_CHECK.format(
+            botname=_bot['name'], 
+            botuname=_bot['username'], 
+            from_chat=source_title, 
+            to_chat=target_title, 
+            skip=skip_count
+        ),
+        disable_web_page_preview=True,
+        reply_markup=InlineKeyboardMarkup(confirm_btn)
+    )
