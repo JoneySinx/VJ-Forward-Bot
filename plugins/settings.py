@@ -20,10 +20,14 @@ SUB_HEADER = "<b>╭──⌬ 🛠 {}</b>\n<b>│</b>\n"
 # ==============================================================================
 
 async def get_configs(user_id):
+    """Wrapper to safely get configs"""
     return await db.get_configs(user_id)
 
 async def update_configs(user_id, key, value):
+    """Wrapper to update configs including nested filters"""
     current = await db.get_configs(user_id)
+    
+    # Keys that sit at the top level of the config document
     TOP_LEVEL_KEYS = [
         'caption', 'duplicate', 'db_uri', 'forward_tag', 
         'protect', 'min_size', 'max_size', 'extension', 
@@ -33,6 +37,7 @@ async def update_configs(user_id, key, value):
     if key in TOP_LEVEL_KEYS:
         current[key] = value
     else:
+        # Assume it's a filter toggle if not top-level
         if 'filters' not in current:
             current['filters'] = {}
         current['filters'][key] = value
@@ -49,7 +54,7 @@ async def settings_command(client, message):
    await message.reply_text(text, reply_markup=main_buttons())
 
 # ==============================================================================
-#  Callback Query Handler
+#  Callback Query Handler (The Brain)
 # ==============================================================================
 
 @Client.on_callback_query(filters.regex(r'^settings'))
@@ -58,68 +63,87 @@ async def settings_query(bot, query):
   data_parts = query.data.split("#")
   action = data_parts[1]
   
+  # Default Back Button
   back_btn = [[InlineKeyboardButton('🔙 Back', callback_data="settings#main")]]
 
+  # --- Main Menu ---
   if action == "main":
      text = SETTINGS_HEADER + "<b>╰──╼ ᴄᴏɴғɪɢᴜʀᴇ ʏᴏᴜʀ ʙᴏᴛ</b>"
      await query.message.edit_text(text, reply_markup=main_buttons())
 
+  # --- Extra Settings ---
   elif action == "extra":
        text = SUB_HEADER.format("ᴇxᴛʀᴀ sᴇᴛᴛɪɴɢs") + "<b>╰──╼ ᴀᴅᴠᴀɴᴄᴇᴅ ᴄᴏɴғɪɢs</b>"
        await query.message.edit_text(text, reply_markup=extra_buttons())
 
+  # --- Bots Management ---
   elif action == "bots":
      buttons = [] 
      _bot = await db.get_bot(user_id)
      usr_bot = await db.get_userbot(user_id)
+     
      if _bot:
         buttons.append([InlineKeyboardButton(f"🤖 {_bot['name']}", callback_data="settings#editbot")])
      else:
         buttons.append([InlineKeyboardButton('✚ Add Bot', callback_data="settings#addbot")])
+     
      if usr_bot:
         buttons.append([InlineKeyboardButton(f"👤 {usr_bot['name']}", callback_data="settings#edituserbot")])
      else:
         buttons.append([InlineKeyboardButton('✚ Add Userbot', callback_data="settings#adduserbot")])
+     
      buttons.append([InlineKeyboardButton('🔙 Back', callback_data="settings#main")])
+     
      text = SUB_HEADER.format("ʙᴏᴛ ᴍᴀɴᴀɢᴇʀ") + "<b>╰──╼ ᴍᴀɴᴀɢᴇ ʏᴏᴜʀ ᴄʟɪᴇɴᴛs</b>"
      await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(buttons))
 
+  # --- Add Bot Logic (CRITICAL FIX: Pass ID, not Message) ---
   elif action == "addbot":
      await query.message.delete()
-     status = await client_manager.add_bot(bot, query.message)
+     # Fix: Pass user_id explicitly to avoid USER_IS_BOT error
+     status = await client_manager.add_bot(bot, user_id)
      if status:
         await query.message.reply_text("<b>✅ Bot Token Successfully Added!</b>", reply_markup=InlineKeyboardMarkup(back_btn))
 
   elif action == "adduserbot":
      await query.message.delete()
-     status = await client_manager.add_session(bot, query.message)
+     # Fix: Pass user_id explicitly
+     status = await client_manager.add_session(bot, user_id)
      if status:
         await query.message.reply_text("<b>✅ Userbot Session Added!</b>", reply_markup=InlineKeyboardMarkup(back_btn))
 
+  # --- Channel Management ---
   elif action == "channels":
      buttons = []
      channels = await db.get_user_channels(user_id)
      for channel in channels:
         buttons.append([InlineKeyboardButton(f"📢 {channel['title']}", callback_data=f"settings#editchannels_{channel['chat_id']}")])
+     
      buttons.append([InlineKeyboardButton('✚ Add Channel', callback_data="settings#addchannel")])
      buttons.append([InlineKeyboardButton('🔙 Back', callback_data="settings#main")])
+     
      text = SUB_HEADER.format("ᴄʜᴀɴɴᴇʟs") + "<b>╰──╼ ᴍᴀɴᴀɢᴇ ᴛᴀʀɢᴇᴛs</b>"
      await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(buttons))
 
   elif action == "addchannel":  
      await query.message.delete()
      prompt = await bot.ask(chat_id=user_id, text="<b>❪ SET TARGET CHAT ❫\n\nForward a message from your Target Channel.\n/cancel - To Cancel</b>")
+     
      if prompt.text == "/cancel":
         return await prompt.reply_text("<b>❌ Process Cancelled</b>", reply_markup=InlineKeyboardMarkup(back_btn))
+     
      if not prompt.forward_date:
         return await prompt.reply("<b>⚠️ Error: This is not a forwarded message.</b>")
+     
      chat_id = prompt.forward_from_chat.id
      title = prompt.forward_from_chat.title
      username = f"@{prompt.forward_from_chat.username}" if prompt.forward_from_chat.username else "Private"
+     
      chat = await db.add_channel(user_id, chat_id, title, username)
      msg = "<b>✅ Channel Added Successfully!</b>" if chat else "<b>⚠️ Channel Already Exists!</b>"
      await prompt.reply_text(msg, reply_markup=InlineKeyboardMarkup(back_btn))
 
+  # --- Edit/Remove Logic ---
   elif action == "editbot": 
      bot_data = await db.get_bot(user_id)
      text = Script.BOT_DETAILS.format(bot_data['name'], bot_data['id'], bot_data['username'])
@@ -140,6 +164,7 @@ async def settings_query(bot, query):
      await db.remove_userbot(user_id)
      await query.message.edit_text("<b>🗑 Userbot Removed Successfully.</b>", reply_markup=InlineKeyboardMarkup(back_btn))
 
+  # --- Caption Logic ---
   elif action == "caption":
      buttons = []
      data = await get_configs(user_id)
@@ -147,6 +172,7 @@ async def settings_query(bot, query):
         buttons.append([InlineKeyboardButton('👀 View', callback_data="settings#seecaption"), InlineKeyboardButton('🗑 Delete', callback_data="settings#deletecaption")])
      else:
         buttons.append([InlineKeyboardButton('✚ Add Caption', callback_data="settings#addcaption")])
+     
      buttons.append([InlineKeyboardButton('🔙 Back', callback_data="settings#main")])
      text = SUB_HEADER.format("ᴄᴀᴘᴛɪᴏɴ") + "<b>│ Variables:</b>\n<b>│</b> <code>{filename}</code> : File Name\n<b>│</b> <code>{size}</code> : File Size\n<b>╰──╼</b> <code>{caption}</code> : Original Caption"
      await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(buttons))
@@ -171,6 +197,7 @@ async def settings_query(bot, query):
       data = await get_configs(user_id)
       await query.message.edit_text(f"<b>Your Caption:</b>\n\n<code>{data['caption']}</code>", reply_markup=InlineKeyboardMarkup(back_btn))
 
+  # --- Database Logic ---
   elif action == "database":
      buttons = []
      data = await get_configs(user_id)
@@ -178,6 +205,7 @@ async def settings_query(bot, query):
         buttons.append([InlineKeyboardButton('👀 View', callback_data="settings#seeurl"), InlineKeyboardButton('🗑 Delete', callback_data="settings#deleteurl")])
      else:
         buttons.append([InlineKeyboardButton('✚ Add MongoDB', callback_data="settings#addurl")])
+     
      buttons.append([InlineKeyboardButton('🔙 Back', callback_data="settings#main")])
      text = SUB_HEADER.format("ᴅᴀᴛᴀʙᴀsᴇ") + "<b>╰──╼ ғᴏʀ ᴅᴜᴘʟɪᴄᴀᴛᴇ ᴄʜᴇᴄᴋ</b>"
      await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(buttons))
@@ -186,8 +214,10 @@ async def settings_query(bot, query):
      await query.message.delete()
      ask = await bot.ask(user_id, "<b>Send your MongoDB URI:</b>\n\n/cancel - To Stop", disable_web_page_preview=True)
      if ask.text == "/cancel": return
+     
      if not ask.text.startswith("mongodb"):
         return await ask.reply("<b>⚠️ Invalid URL format.</b>", reply_markup=InlineKeyboardMarkup(back_btn))
+        
      connected, udb = await connect_user_db(user_id, ask.text, "test")
      if connected:
         await udb.drop_all()
@@ -211,7 +241,7 @@ async def settings_query(bot, query):
         SUB_HEADER.format("ғɪʟᴛᴇʀs") + "<b>╰──╼ ᴛᴏɢɢʟᴇ ᴄᴏɴᴛᴇɴᴛ ᴛʏᴘᴇs</b>",
         reply_markup=await filters_buttons(user_id))
 
-  # --- Filters Page 2 (Fix for "Next" Button) ---
+  # --- Filters Page 2 (NEXT BUTTON HANDLER) ---
   elif action == "nextfilters":
      await query.message.edit_text(
         SUB_HEADER.format("ᴀᴅᴠᴀɴᴄᴇᴅ ғɪʟᴛᴇʀs") + "<b>╰──╼ ᴍᴏʀᴇ ᴏᴘᴛɪᴏɴs</b>",
@@ -222,13 +252,14 @@ async def settings_query(bot, query):
      new_value = False if value == "True" else True
      await update_configs(user_id, key, new_value)
      
-     # Refresh the correct page based on key
+     # Logic to stay on correct page after toggle
      page_2_keys = ['poll', 'protect', 'voice', 'animation', 'sticker', 'duplicate', 'link']
      if key in page_2_keys:
         await query.edit_message_reply_markup(reply_markup=await next_filters_buttons(user_id))
      else:
         await query.edit_message_reply_markup(reply_markup=await filters_buttons(user_id))
 
+  # --- Size Limits ---
   elif action.startswith("file_size") or action.startswith("maxfile_size"):
      settings = await get_configs(user_id)
      is_max = "max" in action
@@ -254,6 +285,7 @@ async def settings_query(bot, query):
      except Exception as e:
          print(f"Size Error: {e}")
 
+  # --- Keywords & Extensions ---
   elif action == "get_keyword":
     keywords = (await get_configs(user_id))['keywords']
     text = SUB_HEADER.format("ᴋᴇʏᴡᴏʀᴅs")
@@ -298,6 +330,7 @@ async def settings_query(bot, query):
       await query.answer("All Extensions Removed", show_alert=True)
       await settings_query(bot, query)
 
+  # --- Button Logic ---
   elif action == "button":
      buttons = []
      data = await get_configs(user_id)
@@ -367,9 +400,11 @@ def generate_size_buttons(size, callback_base):
 async def filters_buttons(user_id):
   data = await get_configs(user_id)
   f = data['filters']
+  
   def btn(label, key, val):
       state = '✅' if val else '❌'
       return [InlineKeyboardButton(label, f'settings#alert_{label}'), InlineKeyboardButton(state, f'settings#updatefilter-{key}-{val}')]
+
   buttons = [
       btn('Forward Tag', 'forward_tag', data['forward_tag']),
       btn('Texts', 'text', f['text']),
@@ -395,7 +430,7 @@ async def next_filters_buttons(user_id):
       btn('Skip Dup', 'duplicate', data['duplicate']),
       btn('Polls', 'poll', f['poll']),
       btn('Protect', 'protect', data['protect']),
-      btn('Links', 'link', f.get('link', True)), # <-- Link Filter Button Added Here
+      btn('Links', 'link', f.get('link', True)), # <-- Link Filter Button Added
       [InlineKeyboardButton('⫷ Back', 'settings#filters'), InlineKeyboardButton('Home 🏠', 'settings#main')]
   ]
   return InlineKeyboardMarkup(buttons)
