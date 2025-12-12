@@ -1,5 +1,5 @@
-# Python 3.11 Slim (Faster & Lightweight)
-FROM python:3.11-slim-buster
+# Old 'buster' image removed. Using newer 'bookworm' (Debian 12)
+FROM python:3.11-slim-bookworm
 
 # Set Environment Variables
 ENV PYTHONUNBUFFERED=1
@@ -23,7 +23,7 @@ RUN pip3 install --no-cache-dir -U pip \
 # Copy Project Files
 COPY . .
 
-# Grant Permission to Start Script
+# Grant Permission to Start Script (Optional but safe)
 RUN chmod +x start.sh
 
 # Run the Bot
