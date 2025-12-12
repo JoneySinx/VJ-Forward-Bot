@@ -1,153 +1,200 @@
-# Don't Remove Credit Tg - @VJ_Botz
-# Subscribe YouTube Channel For Amazing Bot https://youtube.com/@Tech_VJ
-# Ask Doubt on telegram @KingVJ01
+import re
+import asyncio
+from hydrogram import Client, filters, enums
+from hydrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
-import re, asyncio
-from database import Db, db
-from config import temp
-from .test import CLIENT, get_client
+# --- Custom Modules ---
+from database import db
+from config import Temp
+from .test import get_client
 from script import Script
-import base64
-from pyrogram.file_id import FileId
-from pyrogram import Client, filters, enums 
-from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
-import struct
 
-# Don't Remove Credit Tg - @VJ_Botz
-# Subscribe YouTube Channel For Amazing Bot https://youtube.com/@Tech_VJ
-# Ask Doubt on telegram @KingVJ01
+# --- Constants ---
+# Regex for parsing Telegram Links
+LINK_REGEX = re.compile(r"(?:https?://)?(?:t\.me|telegram\.me|telegram\.dog)/(?:c/)?(\d+|[a-zA-Z_0-9]+)/(\d+)$")
 
-CLIENT = CLIENT()
-COMPLETED_BTN = InlineKeyboardMarkup(
-  [[
-    InlineKeyboardButton('💟 sᴜᴘᴘᴏʀᴛ ɢʀᴏᴜᴘ 💟', url='https://t.me/rdxflix')
-  ],[
-    InlineKeyboardButton('💠 ᴜᴘᴅᴀᴛᴇ ᴄʜᴀɴɴᴇʟ 💠', url='https://t.me/teamyourx')
-  ]]
-)
-CANCEL_BTN = InlineKeyboardMarkup([[InlineKeyboardButton('• ᴄᴀɴᴄᴇʟ', 'terminate_frwd')]])
+# HUD Design for De-Duplication
+UNEQUIFY_HUD = """
+<b>╭──⌬ ♻️ ᴜɴᴇǫᴜɪғʏ (ᴅᴇ-ᴅᴜᴘ)</b>
+<b>│</b>
+<b>│</b>  {}
+<b>│</b>  <code>{}</code>
+<b>│</b>
+<b>├──╼ 📊 sᴛᴀᴛɪsᴛɪᴄs</b>
+<b>│ 🔍 sᴄᴀɴɴᴇᴅ :</b> <code>{}</code>
+<b>│ 🗑 ᴅᴇʟᴇᴛᴇᴅ :</b> <code>{}</code>
+<b>│ 📁 ᴜɴɪǫᴜᴇ  :</b> <code>{}</code>
+<b>│</b>
+<b>╰──╼ 🤖 sᴛᴀᴛᴜs :</b> <code>{}</code>
+"""
 
-# Don't Remove Credit Tg - @VJ_Botz
-# Subscribe YouTube Channel For Amazing Bot https://youtube.com/@Tech_VJ
-# Ask Doubt on telegram @KingVJ01
+# Buttons
+CANCEL_BTN = InlineKeyboardMarkup([[InlineKeyboardButton('🛑 Stop Process', callback_data='terminate_frwd')]])
+COMPLETED_BTN = InlineKeyboardMarkup([[InlineKeyboardButton('✅ Completed', url='https://t.me/VJ_Botz')]])
 
-def encode_file_id(s: bytes) -> str:
-    r = b""
-    n = 0
-
-    for i in s + bytes([22]) + bytes([4]):
-        if i == 0:
-            n += 1
-        else:
-            if n:
-                r += b"\x00" + bytes([n])
-                n = 0
-
-            r += bytes([i])
-
-    return base64.urlsafe_b64encode(r).decode().rstrip("=")
-
-# Don't Remove Credit Tg - @VJ_Botz
-# Subscribe YouTube Channel For Amazing Bot https://youtube.com/@Tech_VJ
-# Ask Doubt on telegram @KingVJ01
-
-def unpack_new_file_id(new_file_id):
-    """Return file_id"""
-    decoded = FileId.decode(new_file_id)
-    file_id = encode_file_id(
-        struct.pack(
-            "<iiqq",
-            int(decoded.file_type),
-            decoded.dc_id,
-            decoded.media_id,
-            decoded.access_hash
-        )
-    )
-    return file_id
-
-# Don't Remove Credit Tg - @VJ_Botz
-# Subscribe YouTube Channel For Amazing Bot https://youtube.com/@Tech_VJ
-# Ask Doubt on telegram @KingVJ01
+# ==============================================================================
+#  Command: /unequify
+# ==============================================================================
 
 @Client.on_message(filters.command("unequify") & filters.private)
-async def unequify(client, message):
-   user_id = message.from_user.id
-   temp.CANCEL[user_id] = False
-   if temp.lock.get(user_id) and str(temp.lock.get(user_id))=="True":
-      return await message.reply("**please wait until previous task complete**")
-   _bot = await db.get_userbot(user_id)
-   if not _bot:
-      return await message.reply("<b>Need userbot to do this process. Please add a userbot using /settings</b>")
-   target = await client.ask(user_id, text="**Forward the last message from target chat or send last message link.**\n/cancel - `cancel this process`")
-   if target.text and target.text.startswith("/"):
-      return await message.reply("**process cancelled !**")
-   elif target.text:
-      regex = re.compile("(https://)?(t\.me/|telegram\.me/|telegram\.dog/)(c/)?(\d+|[a-zA-Z_0-9]+)/(\d+)$")
-      match = regex.match(target.text.replace("?single", ""))
-      if not match:
-         return await message.reply('**Invalid link**')
-      chat_id = match.group(4)
-      last_msg_id = int(match.group(5))
-      if chat_id.isnumeric():
-         chat_id  = int(("-100" + chat_id))
-   elif target.forward_from_chat.type in [enums.ChatType.CHANNEL, 'supergroup']:
-        last_msg_id = target.forward_from_message_id
-        chat_id = target.forward_from_chat.username or target.forward_from_chat.id
-   else:
-        return await message.reply_text("**invalid !**")
-   confirm = await client.ask(user_id, text="**send /yes to start the process and /no to cancel this process**")
-   if confirm.text.lower() == '/no':
-      return await confirm.reply("**process cancelled !**")
-   sts = await confirm.reply("`processing..`")
-   il = False
-   data = _bot['session']
-   try:
-      bot = await get_client(data, is_bot=il)
-      await bot.start()
-   except Exception as e:
-      return await sts.edit(e)
-   try:
-       k = await bot.send_message(chat_id, text="testing")
-       await k.delete()
-   except:
-       await sts.edit(f"**please make your [userbot](t.me/{_bot['username']}) admin in target chat with full permissions**")
-       return await bot.stop()
-   MESSAGES = []
-   DUPLICATE = []
-   total=deleted=0
-   temp.lock[user_id] = True
-   temp.CANCEL[user_id] = False
-   try:
-     await sts.edit(Script.DUPLICATE_TEXT.format(total, deleted, "ᴘʀᴏɢʀᴇssɪɴɢ"), reply_markup=CANCEL_BTN)
-     async for message in bot.search_messages(chat_id=chat_id, filter=enums.MessagesFilter.DOCUMENT):
-        if temp.CANCEL.get(user_id) == True:
-           await sts.edit(Script.DUPLICATE_TEXT.format(total, deleted, "ᴄᴀɴᴄᴇʟʟᴇᴅ"), reply_markup=COMPLETED_BTN)
-           return await bot.stop()
-        file = message.document
-        file_id = unpack_new_file_id(file.file_id) 
-        if file_id in MESSAGES:
-           DUPLICATE.append(message.id)
-        else:
-           MESSAGES.append(file_id)
-        total += 1
-        if total %1000 == 0:
-           await sts.edit(Script.DUPLICATE_TEXT.format(total, deleted, "ᴘʀᴏɢʀᴇssɪɴɢ"), reply_markup=CANCEL_BTN)
-        if len(DUPLICATE) >= 100:
-           await bot.delete_messages(chat_id, DUPLICATE)
-           deleted += 100
-           await sts.edit(Script.DUPLICATE_TEXT.format(total, deleted, "ᴘʀᴏɢʀᴇssɪɴɢ"), reply_markup=CANCEL_BTN)
-           DUPLICATE = []
-     if DUPLICATE:
-        await bot.delete_messages(chat_id, DUPLICATE)
-        deleted += len(DUPLICATE)
-   except Exception as e:
-       temp.lock[user_id] = False 
-       await sts.edit(f"**ERROR**\n`{e}`")
-       return await bot.stop()
-   temp.lock[user_id] = False
-   await sts.edit(Script.DUPLICATE_TEXT.format(total, deleted, "ᴄᴏᴍᴘʟᴇᴛᴇᴅ"), reply_markup=COMPLETED_BTN)
-   await bot.stop()
+async def unequify_handler(client, message):
+    user_id = message.from_user.id
+    
+    # 1. Check Locks
+    if Temp.LOCK.get(user_id):
+        return await message.reply("<b>⚠️ Wait!</b> A task is already running.")
+    
+    Temp.CANCEL[user_id] = False
 
-# Don't Remove Credit Tg - @VJ_Botz
-# Subscribe YouTube Channel For Amazing Bot https://youtube.com/@Tech_VJ
-# Ask Doubt on telegram @KingVJ01
+    # 2. Check Userbot
+    _bot = await db.get_userbot(user_id)
+    if not _bot:
+        return await message.reply(
+            "<b>⚠️ Userbot Required!</b>\nTo delete messages, I need a Userbot (Session).\nAdd it in /settings.",
+            quote=True
+        )
+
+    # 3. Get Target Chat
+    target_prompt = await client.ask(
+        user_id, 
+        text="<b>❪ TARGET CHAT ❫\n\nForward a message from the Target Chat or send its Link.\n\n/cancel - To Stop</b>"
+    )
+    
+    if target_prompt.text and target_prompt.text.startswith("/"):
+        return await message.reply("<b>❌ Process Cancelled.</b>")
+
+    chat_id = None
+    chat_username = None
+
+    # Parse Link
+    if target_prompt.text and not target_prompt.forward_date:
+        match = LINK_REGEX.match(target_prompt.text.replace("?single", "").strip())
+        if not match:
+            return await message.reply('<b>❌ Invalid Link!</b>')
+        
+        identifier = match.group(1)
+        if identifier.isdigit():
+            chat_id = int(f"-100{identifier}")
+        else:
+            chat_id = identifier # Username
+            
+    # Parse Forward
+    elif target_prompt.forward_from_chat:
+        chat_id = target_prompt.forward_from_chat.id
+    else:
+        return await message.reply("<b>❌ Invalid Input!</b>")
+
+    # 4. Confirmation
+    confirm = await client.ask(
+        user_id, 
+        text="<b>⚠️ WARNING:</b> This will delete duplicate files from the chat.\nType <code>/yes</code> to confirm."
+    )
+    if confirm.text.lower() != '/yes':
+        return await message.reply("<b>❌ Cancelled.</b>")
+
+    status_msg = await message.reply("<b>🔄 Initializing Userbot...</b>")
+    
+    # 5. Start Userbot
+    try:
+        userbot = await get_client(_bot['session'], is_bot=False)
+        await userbot.start()
+    except Exception as e:
+        return await status_msg.edit(f"<b>❌ Userbot Login Failed:</b> `{e}`")
+
+    # 6. Verify Permissions
+    try:
+        test = await userbot.send_message(chat_id, "Testing Permissions...")
+        await test.delete()
+    except Exception:
+        await userbot.stop()
+        return await status_msg.edit("<b>❌ Error:</b> Userbot must be an <b>Admin</b> in the target chat with Delete permissions.")
+
+    # ==========================================================================
+    #  Core Logic: De-Duplication
+    # ==========================================================================
+    
+    Temp.LOCK[user_id] = True
+    
+    unique_files = set() # To store file_unique_id
+    duplicate_ids = []   # To store message_ids to delete
+    
+    total_scanned = 0
+    deleted_count = 0
+    
+    try:
+        # Initial HUD Update
+        await update_hud(status_msg, total_scanned, deleted_count, 0, "Scanning...", CANCEL_BTN)
+
+        async for msg in userbot.search_messages(chat_id=chat_id, filter=enums.MessagesFilter.DOCUMENT):
+            # Check Cancellation
+            if Temp.CANCEL.get(user_id):
+                await update_hud(status_msg, total_scanned, deleted_count, len(unique_files), "Cancelled", COMPLETED_BTN)
+                break
+            
+            if not msg.document:
+                continue
+
+            # logic: file_unique_id is constant for the same file content
+            uid = msg.document.file_unique_id
+            
+            if uid in unique_files:
+                duplicate_ids.append(msg.id)
+            else:
+                unique_files.add(uid)
+            
+            total_scanned += 1
+
+            # Update HUD every 200 messages
+            if total_scanned % 200 == 0:
+                await update_hud(status_msg, total_scanned, deleted_count, len(unique_files), "Scanning...", CANCEL_BTN)
+
+            # Batch Delete (Every 100 duplicates)
+            if len(duplicate_ids) >= 100:
+                await userbot.delete_messages(chat_id, duplicate_ids)
+                deleted_count += len(duplicate_ids)
+                duplicate_ids = [] # Reset batch
+                await update_hud(status_msg, total_scanned, deleted_count, len(unique_files), "Deleting...", CANCEL_BTN)
+
+        # Delete remaining duplicates
+        if duplicate_ids:
+            await userbot.delete_messages(chat_id, duplicate_ids)
+            deleted_count += len(duplicate_ids)
+
+        await update_hud(status_msg, total_scanned, deleted_count, len(unique_files), "Completed", COMPLETED_BTN)
+
+    except Exception as e:
+        await status_msg.edit(f"<b>❌ Error:</b> `{e}`")
+    finally:
+        Temp.LOCK[user_id] = False
+        await userbot.stop()
+
+
+# ==============================================================================
+#  Helper: HUD Updater
+# ==============================================================================
+
+async def update_hud(msg, scanned, deleted, unique, status, markup):
+    # Simple Loading Bar Logic
+    # Cycle through ▰ positions based on scanned count for animation effect
+    cycle = (scanned // 50) % 6
+    bar = ["▱"] * 6
+    if status != "Completed":
+        bar[cycle] = "▰"
+    else:
+        bar = ["▰"] * 6 # Full bar on complete
+        
+    progress_bar = "".join(bar)
+    
+    text = UNEQUIFY_HUD.format(
+        progress_bar,
+        status,
+        scanned,
+        deleted,
+        unique,
+        status
+    )
+    
+    try:
+        await msg.edit(text, reply_markup=markup)
+    except Exception:
+        pass
