@@ -1,75 +1,105 @@
-# Don't Remove Credit Tg - @VJ_Botz
-# Subscribe YouTube Channel For Amazing Bot https://youtube.com/@Tech_VJ
-# Ask Doubt on telegram @KingVJ01
-
-import asyncio, logging
-from config import Config
-from pyrogram import Client as VJ, idle
-from typing import Union, Optional, AsyncGenerator
+import asyncio
+import logging
 from logging.handlers import RotatingFileHandler
+from typing import Union, Optional, AsyncGenerator
+
+# --- Hydrogram Imports ---
+from hydrogram import Client, idle, types
+from hydrogram.errors import FloodWait
+
+# --- Custom Modules ---
+from config import Config
 from plugins.regix import restart_forwards
 
-# Don't Remove Credit Tg - @VJ_Botz
-# Subscribe YouTube Channel For Amazing Bot https://youtube.com/@Tech_VJ
-# Ask Doubt on telegram @KingVJ01
+# --- Logging Configuration ---
+# लॉगिंग सेट की गई है ताकि एरर आने पर पता चल सके
+logging.basicConfig(
+    level=logging.INFO,
+    format="[%(asctime)s - %(levelname)s] - %(name)s - %(message)s",
+    datefmt="%d-%b-%y %H:%M:%S",
+    handlers=[
+        RotatingFileHandler("bot.log", maxBytes=5000000, backupCount=10),
+        logging.StreamHandler(),
+    ],
+)
+logger = logging.getLogger("VJ-Forward-Bot")
 
-if __name__ == "__main__":
-    VJBot = VJ(
-        "VJ-Forward-Bot",
-        bot_token=Config.BOT_TOKEN,
-        api_id=Config.API_ID,
-        api_hash=Config.API_HASH,
-        sleep_threshold=120,
-        plugins=dict(root="plugins")
-    )  
+# --- Advanced Bot Class (Hydrogram) ---
+class VJBot(Client):
+    def __init__(self):
+        super().__init__(
+            name="VJ-Forward-Bot",
+            api_id=Config.API_ID,
+            api_hash=Config.API_HASH,
+            bot_token=Config.BOT_TOKEN,
+            sleep_threshold=120,
+            plugins=dict(root="plugins"),
+        )
+
+    async def start(self):
+        """बोट स्टार्ट होने पर यह फंक्शन चलेगा"""
+        await super().start()
+        me = await self.get_me()
+        logger.info(f"Bot Started as {me.first_name} (@{me.username})")
+        
+        # पिछले अधूरे काम को रीस्टार्ट करना
+        try:
+            await restart_forwards(self)
+            logger.info("Restarted incomplete forwards successfully.")
+        except Exception as e:
+            logger.error(f"Error during restart_forwards: {e}")
+
+    async def stop(self, *args):
+        """बोट बंद होने पर यह फंक्शन चलेगा"""
+        await super().stop()
+        logger.info("Bot Stopped. Bye!")
+
     async def iter_messages(
         self,
         chat_id: Union[int, str],
         limit: int,
         offset: int = 0,
     ) -> Optional[AsyncGenerator["types.Message", None]]:
-        """Iterate through a chat sequentially.
-        This convenience method does the same as repeatedly calling :meth:`~pyrogram.Client.get_messages` in a loop, thus saving
-        you from the hassle of setting up boilerplate code. It is useful for getting the whole chat messages with a
-        single call.
-        Parameters:
-            chat_id (``int`` | ``str``):
-                Unique identifier (int) or username (str) of the target chat.
-                For your personal cloud (Saved Messages) you can simply use "me" or "self".
-                For a contact that exists in your Telegram address book you can use his phone number (str).
-                
-            limit (``int``):
-                Identifier of the last message to be returned.
-                
-            offset (``int``, *optional*):
-                Identifier of the first message to be returned.
-                Defaults to 0.
-        Returns:
-            ``Generator``: A generator yielding :obj:`~pyrogram.types.Message` objects.
-        Example:
-            .. code-block:: python
-                for message in app.iter_messages("pyrogram", 1, 15000):
-                    print(message.text)
+        """
+        यह फंक्शन मैसेज को एक-एक करके (Sequential) fetch करता है।
+        Hydrogram में यह बड़े चैट्स को हैंडल करने के लिए बहुत अच्छा है।
         """
         current = offset
         while True:
+            # एक बार में 200 मैसेज की लिमिट (Telegram API Limit)
             new_diff = min(200, limit - current)
             if new_diff <= 0:
                 return
-            messages = await self.get_messages(chat_id, list(range(current, current+new_diff+1)))
-            for message in messages:
-                yield message
-                current += 1
-               
-    async def main():
-        await VJBot.start()
-        bot_info  = await VJBot.get_me()
-        await restart_forwards(VJBot)
-        print("Bot Started.")
-        await idle()
+            
+            # IDs की लिस्ट बनाना (Example: 100, 101, 102...)
+            message_ids = list(range(current, current + new_diff + 1))
+            
+            try:
+                # message_ids के जरिए मैसेज गेट करना
+                messages = await self.get_messages(chat_id, message_ids)
+                
+                # अगर messages खाली है या None है
+                if not messages:
+                    return
 
-    asyncio.get_event_loop().run_until_complete(main())
+                for message in messages:
+                    # कभी-कभी डिलीटेड मैसेज के कारण None आ सकता है
+                    if message: 
+                        yield message
+                    current += 1
+                    
+            except FloodWait as e:
+                logger.warning(f"FloodWait detected inside iter_messages. Sleeping for {e.value}s")
+                await asyncio.sleep(e.value)
+            except Exception as e:
+                logger.error(f"Error in iter_messages: {e}")
+                return
 
-# Don't Remove Credit Tg - @VJ_Botz
-# Subscribe YouTube Channel For Amazing Bot https://youtube.com/@Tech_VJ
-# Ask Doubt on telegram @KingVJ01
+# --- Main Execution ---
+if __name__ == "__main__":
+    try:
+        # बोट का ऑब्जेक्ट बनाना और स्टार्ट करना
+        bot = VJBot()
+        bot.run()
+    except Exception as e:
+        logger.error(f"Fatal Error: {e}")
