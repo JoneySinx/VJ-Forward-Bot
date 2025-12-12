@@ -1,18 +1,15 @@
 import asyncio
 import logging
+import pytz # Timezone ke liye
+from datetime import datetime
 from logging.handlers import RotatingFileHandler
-from typing import Union, Optional, AsyncGenerator
-
-# --- Hydrogram Imports ---
 from hydrogram import Client, idle, types
 from hydrogram.errors import FloodWait
-
-# --- Custom Modules ---
+from typing import Union, Optional, AsyncGenerator
 from config import Config
 from plugins.regix import restart_forwards
 
 # --- Logging Configuration ---
-# लॉगिंग सेट की गई है ताकि एरर आने पर पता चल सके
 logging.basicConfig(
     level=logging.INFO,
     format="[%(asctime)s - %(levelname)s] - %(name)s - %(message)s",
@@ -22,13 +19,14 @@ logging.basicConfig(
         logging.StreamHandler(),
     ],
 )
-logger = logging.getLogger("VJ-Forward-Bot")
+# Logger name cleaned
+logger = logging.getLogger("Forward-Bot")
 
-# --- Advanced Bot Class (Hydrogram) ---
+# --- Advanced Bot Class ---
 class VJBot(Client):
     def __init__(self):
         super().__init__(
-            name="VJ-Forward-Bot",
+            name="Forward-Bot", # Clean Session Name
             api_id=Config.API_ID,
             api_hash=Config.API_HASH,
             bot_token=Config.BOT_TOKEN,
@@ -37,12 +35,40 @@ class VJBot(Client):
         )
 
     async def start(self):
-        """बोट स्टार्ट होने पर यह फंक्शन चलेगा"""
+        """Runs when bot starts"""
         await super().start()
         me = await self.get_me()
         logger.info(f"Bot Started as {me.first_name} (@{me.username})")
         
-        # पिछले अधूरे काम को रीस्टार्ट करना
+        # --- Admin Alert Logic (IST Time) ---
+        try:
+            # Indian Timezone Set karein
+            ist = pytz.timezone("Asia/Kolkata")
+            now = datetime.now(ist)
+            
+            # Date aur Time format karein
+            date_str = now.strftime("%d %B, %Y") # Ex: 12 December, 2025
+            time_str = now.strftime("%I:%M:%S %p") # Ex: 10:30:00 PM
+            
+            # Message Text
+            alert_msg = (
+                f"<b>🟢 Service Restarted!</b>\n\n"
+                f"<b>🤖 Bot:</b> @{me.username}\n"
+                f"<b>📅 Date:</b> <code>{date_str}</code>\n"
+                f"<b>⌚ Time:</b> <code>{time_str} IST</code>"
+            )
+            
+            # Admin ko message bhejein
+            if Config.BOT_OWNER:
+                await self.send_message(chat_id=Config.BOT_OWNER, text=alert_msg)
+                logger.info("Start alert sent to Admin.")
+            else:
+                logger.warning("BOT_OWNER ID not set in Config.")
+                
+        except Exception as e:
+            logger.warning(f"Failed to send start alert: {e}")
+
+        # --- Restart Pending Tasks ---
         try:
             await restart_forwards(self)
             logger.info("Restarted incomplete forwards successfully.")
@@ -50,7 +76,7 @@ class VJBot(Client):
             logger.error(f"Error during restart_forwards: {e}")
 
     async def stop(self, *args):
-        """बोट बंद होने पर यह फंक्शन चलेगा"""
+        """Runs when bot stops"""
         await super().stop()
         logger.info("Bot Stopped. Bye!")
 
@@ -60,30 +86,20 @@ class VJBot(Client):
         limit: int,
         offset: int = 0,
     ) -> Optional[AsyncGenerator["types.Message", None]]:
-        """
-        यह फंक्शन मैसेज को एक-एक करके (Sequential) fetch करता है।
-        Hydrogram में यह बड़े चैट्स को हैंडल करने के लिए बहुत अच्छा है।
-        """
         current = offset
         while True:
-            # एक बार में 200 मैसेज की लिमिट (Telegram API Limit)
             new_diff = min(200, limit - current)
             if new_diff <= 0:
                 return
             
-            # IDs की लिस्ट बनाना (Example: 100, 101, 102...)
             message_ids = list(range(current, current + new_diff + 1))
             
             try:
-                # message_ids के जरिए मैसेज गेट करना
                 messages = await self.get_messages(chat_id, message_ids)
-                
-                # अगर messages खाली है या None है
                 if not messages:
                     return
 
                 for message in messages:
-                    # कभी-कभी डिलीटेड मैसेज के कारण None आ सकता है
                     if message: 
                         yield message
                     current += 1
@@ -98,7 +114,6 @@ class VJBot(Client):
 # --- Main Execution ---
 if __name__ == "__main__":
     try:
-        # बोट का ऑब्जेक्ट बनाना और स्टार्ट करना
         bot = VJBot()
         bot.run()
     except Exception as e:
