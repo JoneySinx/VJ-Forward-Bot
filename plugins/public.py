@@ -22,7 +22,6 @@ from config import Temp
 from script import Script
 
 # Regex for parsing Telegram Links
-# Support: t.me/c/123/456 (Private) & t.me/username/456 (Public)
 LINK_REGEX = re.compile(r"(?:https?://)?(?:t\.me|telegram\.me|telegram\.dog)/(?:c/)?(\d+|[a-zA-Z_0-9]+)/(\d+)$")
 
 @Client.on_message(filters.private & filters.command(["forward"]))
@@ -81,8 +80,13 @@ async def forward_command_handler(bot, message):
         target_title = channels[0]['title']
 
     # 4. Get Source Chat (Link or Forward)
-    # Remove keyboard before asking next question
-    await message.reply("...", reply_markup=ReplyKeyboardRemove()).delete()
+    # --- FIX: Handle cleanup correctly ---
+    try:
+        cleanup_msg = await message.reply("...", reply_markup=ReplyKeyboardRemove())
+        await cleanup_msg.delete()
+    except Exception:
+        pass
+    # -------------------------------------
     
     source_prompt = await bot.ask(message.chat.id, Script.FROM_MSG)
     
@@ -122,7 +126,6 @@ async def forward_command_handler(bot, message):
         chat_info = await bot.get_chat(chat_id)
         source_title = chat_info.title
     except Exception:
-        # If bot can't access chat yet (e.g. userbot needed), keep default title
         pass
 
     # 5. Get Skip Count
@@ -137,14 +140,14 @@ async def forward_command_handler(bot, message):
         return await message.reply("<b>❌ Error:</b> Please enter a valid number (Integer).")
 
     # 6. Final Confirmation
-    forward_id = f"{user_id}-{skip_prompt.id}" # Unique ID based on message ID
+    forward_id = f"{user_id}-{skip_prompt.id}" 
     
     confirm_btn = [[
         InlineKeyboardButton('✅ Yes, Start', callback_data=f"start_public_{forward_id}"),
         InlineKeyboardButton('❌ No, Cancel', callback_data="close_btn")
     ]]
     
-    # Store Data in STS (In-Memory) before confirmation
+    # Store Data in STS
     STS(forward_id).store(chat_id, target_chat_id, skip_count, last_msg_id)
     
     await message.reply_text(
