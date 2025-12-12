@@ -15,8 +15,8 @@ from hydrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from config import Config, Temp
 from script import Script
 from database import db
-from .utils import STS  # Ensure utils.py exists
-from .test import get_client, iter_messages # Ensure test.py exists
+from .utils import STS
+from .test import get_client, iter_messages
 from .db import connect_user_db
 
 # Logger Setup
@@ -87,7 +87,6 @@ async def start_public_forward(bot, query):
 
 # ==============================================================================
 #  Core Forwarding Logic (Engine)
-#  This handles both New Starts and Restarts
 # ==============================================================================
 async def run_forward_logic(main_bot, worker_client, user_id, status_msg, sts, datas, forward_tag, caption, protect, button, is_bot_client, is_restart=False):
     
@@ -124,12 +123,9 @@ async def run_forward_logic(main_bot, worker_client, user_id, status_msg, sts, d
             connected, user_db = await connect_user_db(user_id, datas['db_uri'], sts.get("TO"))
             if connected:
                 user_have_db = True
-                # Load existing files for duplicate check
                 if datas.get('skip_duplicate'):
                     async for ofile in await user_db.get_all_files():
                         dup_files.append(ofile["file_id"])
-            else:
-                await msg_edit(status_msg, "<code>Database Connection Failed. Running without DB.</code>")
 
         if not is_restart:
             Temp.FORWARDINGS += 1
@@ -140,7 +136,7 @@ async def run_forward_logic(main_bot, worker_client, user_id, status_msg, sts, d
         Temp.IS_FRWD_CHAT.append(sts.get("TO"))
         Temp.LOCK[user_id] = True
         
-        sleep_time = 1 if is_bot_client else 10 # Safer sleep for userbots
+        sleep_time = 1 if is_bot_client else 10
         
         # --- Filters Preparation ---
         keywords = "|".join(datas['keywords']) if datas['keywords'] else None
@@ -149,10 +145,10 @@ async def run_forward_logic(main_bot, worker_client, user_id, status_msg, sts, d
         MSG_BATCH = []
         progress_counter = 0
 
-        await edit_status(user_id, status_msg, 'ᴘʀᴏɢʀᴇssɪɴɢ', 5, sts)
+        # Initial Status Update
+        await edit_status(user_id, status_msg, 'Starting', 5, sts)
 
         # --- Main Loop ---
-        # Note: iter_messages needs to be robust
         async for message in iter_messages(
             worker_client, 
             chat_id=sts.get("FROM"), 
@@ -167,7 +163,7 @@ async def run_forward_logic(main_bot, worker_client, user_id, status_msg, sts, d
 
             # Progress Update (Every 20 msgs)
             if progress_counter % 20 == 0:
-                await edit_status(user_id, status_msg, 'ᴘʀᴏɢʀᴇssɪɴɢ', 5, sts)
+                await edit_status(user_id, status_msg, 'Running', 5, sts)
             progress_counter += 1
             
             sts.add('fetched')
@@ -205,11 +201,10 @@ async def run_forward_logic(main_bot, worker_client, user_id, status_msg, sts, d
                 pending = len(MSG_BATCH)
                 completed_so_far = sts.get('total') - sts.get('fetched')
                 
-                # Determine when to send batch
                 if pending >= 100 or completed_so_far <= 100:
                     await forward_messages_safe(user_id, worker_client, MSG_BATCH, status_msg, sts, protect)
                     sts.add('total_files', pending)
-                    await asyncio.sleep(10) # Safety Delay
+                    await asyncio.sleep(10)
                     MSG_BATCH = []
             else:
                 # Copy Message (No Tag)
@@ -230,7 +225,7 @@ async def run_forward_logic(main_bot, worker_client, user_id, status_msg, sts, d
              Temp.IS_FRWD_CHAT.remove(sts.get("TO"))
         
         await send_msg(main_bot, user_id, "<b>🎉 Forwarding Completed Successfully!</b>")
-        await edit_status(user_id, status_msg, 'ᴄᴏᴍᴘʟᴇᴛᴇᴅ', "completed", sts)
+        await edit_status(user_id, status_msg, 'Completed', "completed", sts)
 
     except Exception as e:
         logger.error(f"Fatal Error in Loop: {e}", exc_info=True)
@@ -240,7 +235,7 @@ async def run_forward_logic(main_bot, worker_client, user_id, status_msg, sts, d
         # --- Cleanup ---
         if user_have_db and user_db:
             try:
-                await user_db.drop_all() # Optional: Depends on if you want to keep history
+                await user_db.drop_all()
                 await user_db.close()
             except: pass
         
@@ -248,7 +243,7 @@ async def run_forward_logic(main_bot, worker_client, user_id, status_msg, sts, d
 
 
 # ==============================================================================
-#  Restart Logic (Using the same engine)
+#  Restart Logic
 # ==============================================================================
 async def restart_forwards(client):
     users = await db.get_all_frwd()
@@ -257,7 +252,6 @@ async def restart_forwards(client):
         tasks.append(restart_single_user(client, user))
     
     if tasks:
-        # Shuffle start times to avoid flooding
         await asyncio.gather(*tasks)
 
 async def restart_single_user(bot, user_data):
@@ -265,7 +259,6 @@ async def restart_single_user(bot, user_data):
     settings = await db.get_forward_details(user_id)
     
     try:
-        # Reconstruct STS
         forward_id = await store_vars(user_id)
         sts = STS(forward_id)
         
@@ -279,16 +272,13 @@ async def restart_single_user(bot, user_data):
         sts.add('deleted', value=settings.get('deleted', 0))
         sts.add('total_files', value=settings.get('total', 0))
         
-        # Get Config
         _bot, caption, forward_tag, datas, protect, button = await sts.get_data(user_id)
         
-        # Get Message for editing
         try:
             m = await bot.get_messages(user_id, settings['msg_id'])
         except:
-            m = None # Cannot update message if deleted
+            m = None
 
-        # Initialize Client
         is_bot_client = _bot.get('is_bot', False)
         token = _bot['token'] if is_bot_client else _bot['session']
         
@@ -297,7 +287,6 @@ async def restart_single_user(bot, user_data):
         
         Temp.FORWARDINGS += 1
         
-        # Run Engine
         await run_forward_logic(
             main_bot=bot,
             worker_client=worker,
@@ -319,8 +308,81 @@ async def restart_single_user(bot, user_data):
 
 
 # ==============================================================================
-#  Helper Functions (Cleaned & Optimized)
+#  Helper Functions & Status Updates
 # ==============================================================================
+
+def TimeFormatter(milliseconds: int) -> str:
+    seconds, milliseconds = divmod(int(milliseconds), 1000)
+    minutes, seconds = divmod(seconds, 60)
+    hours, minutes = divmod(minutes, 60)
+    days, hours = divmod(hours, 24)
+    tmp = ((str(days) + "d ") if days else "") + \
+        ((str(hours) + "h ") if hours else "") + \
+        ((str(minutes) + "m ") if minutes else "") + \
+        ((str(seconds) + "s") if seconds else "")
+    return tmp if tmp else "0s"
+
+async def edit_status(user, msg, title, status, sts):
+    if not msg: return
+    
+    i = sts.get(full=True)
+    
+    if status == 5:
+        status_text = "Processing..."
+    elif str(status).isnumeric():
+        status_text = f"Sleeping ({status}s)"
+    else:
+        status_text = status
+
+    # Percentage
+    try:
+        percentage = int((i.fetched * 100) / i.total) if i.total > 0 else 0
+    except ZeroDivisionError:
+        percentage = 0
+
+    # Gradient Bar ▰▰▱▱
+    filled_blocks = int(percentage / 10) 
+    empty_blocks = 10 - filled_blocks
+    progress_bar = f"{'▰' * filled_blocks}{'▱' * empty_blocks}"
+
+    # Speed & ETA
+    now = time.time()
+    diff = int(now - i.start)
+    speed_float = sts.divide(i.fetched, diff) if diff > 0 else 0
+    speed_str = f"{speed_float:.1f} msg/s"
+    
+    remaining_files = i.total - i.fetched
+    if speed_float > 0:
+        eta_seconds = int(remaining_files / speed_float) * 1000 
+        eta = TimeFormatter(eta_seconds)
+    else:
+        eta = "Calculating..."
+
+    progress_str = f"{i.fetched} / {i.total_files}"
+
+    text = TEXT.format(
+        progress_bar,    # Bar
+        percentage,      # %
+        progress_str,    # Fetched/Total
+        eta,             # ETA
+        speed_str,       # Speed
+        i.duplicate,     # Dup
+        i.deleted,       # Del
+        i.skip           # Skip
+    )
+    
+    await update_forward_db(user, i)
+
+    # Buttons
+    btn_txt = f"⚡ {percentage}% | {status_text}"
+    buttons = [[InlineKeyboardButton(btn_txt, f'fwrdstatus#{status}#{eta}#{percentage}#{i.id}')]]
+    
+    if status in ["cancelled", "completed"]:
+        buttons.append([InlineKeyboardButton('✅ Task Completed', url='https://t.me/VJ_Botz')])
+    else:
+        buttons.append([InlineKeyboardButton('🛑 Terminate Process', 'terminate_frwd')])
+    
+    await msg_edit(msg, text, InlineKeyboardMarkup(buttons))
 
 async def copy_message_safe(user, bot, msg, m, sts):
     try:
@@ -328,7 +390,6 @@ async def copy_message_safe(user, bot, msg, m, sts):
         from_chat = sts.get('FROM')
         
         if msg.get("media") and msg.get("caption"):
-            # If we cached the media ID
             await bot.send_cached_media(
                 chat_id=chat_id,
                 file_id=msg.get("media"),
@@ -337,7 +398,6 @@ async def copy_message_safe(user, bot, msg, m, sts):
                 protect_content=msg.get("protect")
             )
         else:
-            # Native Copy
             await bot.copy_message(
                 chat_id=chat_id,
                 from_chat_id=from_chat,
@@ -347,9 +407,9 @@ async def copy_message_safe(user, bot, msg, m, sts):
                 protect_content=msg.get("protect")
             )
     except FloodWait as e:
-        await edit_status(user, m, 'ᴘʀᴏɢʀᴇssɪɴɢ', e.value, sts)
+        await edit_status(user, m, 'Running', e.value, sts)
         await asyncio.sleep(e.value)
-        await copy_message_safe(user, bot, msg, m, sts) # Retry
+        await copy_message_safe(user, bot, msg, m, sts)
     except Exception as e:
         logger.error(f"Copy Error: {e}")
         sts.add('deleted')
@@ -363,9 +423,9 @@ async def forward_messages_safe(user, bot, msg_ids, m, sts, protect):
             message_ids=msg_ids
         )
     except FloodWait as e:
-        await edit_status(user, m, 'ᴘʀᴏɢʀᴇssɪɴɢ', e.value, sts)
+        await edit_status(user, m, 'Running', e.value, sts)
         await asyncio.sleep(e.value)
-        await forward_messages_safe(user, bot, msg_ids, m, sts, protect) # Retry
+        await forward_messages_safe(user, bot, msg_ids, m, sts, protect)
 
 async def is_cancelled(client, user, msg, sts):
     if Temp.CANCEL.get(user):
@@ -373,7 +433,7 @@ async def is_cancelled(client, user, msg, sts):
             Temp.IS_FRWD_CHAT.remove(sts.get("TO"))
         
         if msg:
-            await edit_status(user, msg, 'ᴄᴀɴᴄᴇʟʟᴇᴅ', "cancelled", sts)
+            await edit_status(user, msg, 'Cancelled', "cancelled", sts)
         
         await send_msg(client, user, "<b>❌ Forwarding Cancelled</b>")
         await stop_process(client, user)
@@ -390,50 +450,6 @@ async def stop_process(client, user):
         Temp.FORWARDINGS -= 1
     Temp.LOCK[user] = False
 
-# --- Status Updates ---
-
-async def edit_status(user, msg, title, status, sts):
-    if not msg: return
-    
-    i = sts.get(full=True)
-    status_text = 'Forwarding' if status == 5 else f"Sleeping {status}s" if str(status).isnumeric() else status
-    
-    # Calculate Percentage
-    try:
-        percent_val = (i.fetched * 100) / i.total
-    except ZeroDivisionError:
-        percent_val = 0
-    percentage = "{:.0f}".format(percent_val)
-
-    # Text Formatting
-    text = TEXT.format(i.fetched, i.total_files, i.duplicate, i.deleted, i.skip, i.filtered, status_text, percentage, title)
-    
-    # Update DB for Resume capability
-    await update_forward_db(user, i)
-
-    # Progress Bar
-    progress_bar = "●{0}{1}".format(
-       ''.join(["●" for _ in range(math.floor(int(percentage) / 4))]),
-       ''.join(["○" for _ in range(24 - math.floor(int(percentage) / 4))])
-    )
-    
-    # Calculate Time
-    now = time.time()
-    diff = int(now - i.start)
-    speed = sts.divide(i.fetched, diff) if diff > 0 else 1
-    remaining_files = i.total - i.fetched
-    time_to_completion = round(sts.divide(remaining_files, speed)) * 1000
-    
-    # Buttons
-    buttons = [[InlineKeyboardButton(progress_bar, f'fwrdstatus#{status}#{time_to_completion}#{percentage}#{i.id}')]]
-    
-    if status in ["cancelled", "completed"]:
-        buttons.append([InlineKeyboardButton('• Completed •', url='https://t.me/VJ_BOTZ')])
-    else:
-        buttons.append([InlineKeyboardButton('• Cancel', 'terminate_frwd')])
-    
-    await msg_edit(msg, text, InlineKeyboardMarkup(buttons))
-
 # --- Filters & Utils ---
 
 async def extension_filter(extensions, file_name):
@@ -443,7 +459,6 @@ async def keyword_filter(keywords, file_name):
     return bool(keywords and re.search(keywords, file_name))
 
 async def size_filter(max_size, min_size, file_size):
-    # file_size is in bytes. User settings usually in MB
     size_mb = file_size / (1024 * 1024)
     if max_size == 0 and min_size == 0: return False
     if max_size == 0: return size_mb < min_size
@@ -458,7 +473,6 @@ def get_media_id(msg):
 
 def custom_caption(msg, caption):
     if not msg.media: return None
-    
     media_obj = getattr(msg, msg.media.value, None)
     file_name = getattr(media_obj, 'file_name', '')
     file_size = getattr(media_obj, 'file_size', 0)
@@ -483,13 +497,12 @@ def get_size(size):
     return "%.2f %s" % (size, units[i])
 
 async def update_forward_db(user_id, i):
-    # Helper to update DB cleanly
     details = {
         'chat_id': i.FROM,
         'toid': i.TO,
-        'forward_id': i.id, # Ensure STS object has ID
+        'forward_id': i.id,
         'limit': i.limit,
-        'msg_id': 0, # Placeholder or actual
+        'msg_id': 0,
         'start_time': i.start,
         'fetched': i.fetched,
         'offset': i.fetched,
@@ -526,7 +539,6 @@ async def store_vars(user_id):
     STS(id=forward_id).store(settings['chat_id'], settings['toid'], settings['skip'], settings['limit'])
     return forward_id
 
-# Cancellation Handler
 @Client.on_callback_query(filters.regex(r'^terminate_frwd$'))
 async def terminate_handler(bot, m):
     user_id = m.from_user.id
