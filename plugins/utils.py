@@ -47,13 +47,14 @@ class STS:
             setattr(self, k, v)
         return self
 
-    def add(self, key=None, value=1, time_update=False, start_time=None):
+    # --- FIX: Changed 'time_update' back to 'time' ---
+    def add(self, key=None, value=1, time=False, start_time=None):
         """Update counters or start time"""
         if self.id not in self.data:
             return
 
-        if time_update:
-            current_time = start_time if start_time is not None else time.time()
+        if time:
+            current_time = start_time if start_time is not None else __import__('time').time()
             self.data[self.id].update({'start': current_time})
         else:
             current_val = self.data[self.id].get(key, 0)
@@ -86,7 +87,6 @@ class STS:
         max_size = configs.get('max_size', 0)
         
         # Check Duplicate Logic
-        # If 'duplicate' in config is True, we enable skip_duplicate logic in Regix
         skip_dup = bool(configs.get('duplicate'))
         
         # Parse Custom Buttons
