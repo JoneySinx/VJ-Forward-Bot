@@ -5,7 +5,7 @@ from hydrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 # --- Custom Modules ---
 from database import db
 from script import Script
-from .test import get_configs, update_configs, ClientManager, parse_buttons
+from .test import ClientManager, parse_buttons # Removed get_configs from here
 from .db import connect_user_db
 
 # Initialize Manager
@@ -14,6 +14,38 @@ client_manager = ClientManager()
 # --- Constants for HUD Design ---
 SETTINGS_HEADER = "<b>╭──⌬ ⚙️ sᴇᴛᴛɪɴɢs ᴍᴇɴᴜ</b>\n<b>│</b>\n"
 SUB_HEADER = "<b>╭──⌬ 🛠 {}</b>\n<b>│</b>\n"
+
+# ==============================================================================
+#  Helper Functions (Fixed)
+# ==============================================================================
+
+async def get_configs(user_id):
+    """Wrapper to get configs from DB"""
+    return await db.get_configs(user_id)
+
+async def update_configs(user_id, key, value):
+    """
+    Wrapper to update specific config keys.
+    Handles nested 'filters' dictionary logic safely.
+    """
+    current = await db.get_configs(user_id)
+    
+    # List of top-level keys in config
+    TOP_LEVEL_KEYS = [
+        'caption', 'duplicate', 'db_uri', 'forward_tag', 
+        'protect', 'min_size', 'max_size', 'extension', 
+        'keywords', 'button', 'filters'
+    ]
+    
+    if key in TOP_LEVEL_KEYS:
+        current[key] = value
+    else:
+        # If key is not top-level, assume it belongs to filters
+        if 'filters' not in current:
+            current['filters'] = {}
+        current['filters'][key] = value
+        
+    await db.update_configs(user_id, current)
 
 # ==============================================================================
 #  Command: /settings
@@ -227,6 +259,14 @@ async def settings_query(bot, query):
         await ask.reply("<b>✅ Database Connected Successfully!</b>", reply_markup=InlineKeyboardMarkup(back_btn))
      else:
         await ask.reply("<b>❌ Connection Failed. Check your URL.</b>", reply_markup=InlineKeyboardMarkup(back_btn))
+        
+  elif action == "seeurl":
+     data = await get_configs(user_id)
+     await query.answer(f"URI: {data['db_uri']}", show_alert=True)
+     
+  elif action == "deleteurl":
+     await update_configs(user_id, 'db_uri', None)
+     await query.message.edit_text("<b>🗑 Database URI Deleted.</b>", reply_markup=InlineKeyboardMarkup(back_btn))
 
   # --- Filters ---
   elif action == "filters":
@@ -315,6 +355,77 @@ async def settings_query(bot, query):
       await query.answer("All Keywords Removed", show_alert=True)
       await settings_query(bot, query) # Refresh
 
+  # --- Extensions (Missing logic from previous, added here) ---
+  elif action == "get_extension":
+    extensions = (await get_configs(user_id))['extension']
+    text = SUB_HEADER.format("ᴇxᴛᴇɴsɪᴏɴs")
+    if extensions:
+       text += "\n".join([f"<code>• {k}</code>" for k in extensions])
+    else:
+       text += "<b>🚫 No Extensions Filtered</b>"
+    
+    btn = [
+        [InlineKeyboardButton('✚ Add', 'settings#add_extension'), InlineKeyboardButton('🗑 Clear All', 'settings#rmve_all_extension')],
+        [InlineKeyboardButton('🔙 Back', 'settings#extra')]
+    ]
+    await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(btn))
+
+  elif action == "add_extension":
+    await query.message.delete()
+    ask = await bot.ask(user_id, "**Send Extensions (separated by space):**\nExample: `mkv mp4 jpg`")
+    if ask.text == "/cancel": return
+    
+    new_keys = ask.text.split(" ")
+    current = (await get_configs(user_id))['extension'] or []
+    current.extend(new_keys)
+    
+    await update_configs(user_id, 'extension', current)
+    await ask.reply_text("<b>✅ Extensions Added</b>", reply_markup=InlineKeyboardMarkup(back_btn))
+
+  elif action == "rmve_all_extension":
+      await update_configs(user_id, 'extension', None)
+      await query.answer("All Extensions Removed", show_alert=True)
+      await settings_query(bot, query) # Refresh
+
+  # --- Buttons Logic ---
+  elif action == "button":
+     buttons = []
+     data = await get_configs(user_id)
+     if data['button']:
+        buttons.append([InlineKeyboardButton('👀 View', callback_data="settings#seebutton"),
+                        InlineKeyboardButton('🗑 Delete', callback_data="settings#deletebutton")])
+     else:
+        buttons.append([InlineKeyboardButton('✚ Add Button', callback_data="settings#addbutton")])
+     
+     buttons.append([InlineKeyboardButton('🔙 Back', callback_data="settings#main")])
+     
+     text = SUB_HEADER.format("ʙᴜᴛᴛᴏɴs") + \
+            "<b>╰──╼</b> <code>[Name][buttonurl:https://link.com]</code>"
+     await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(buttons))
+
+  elif action == "addbutton":
+     await query.message.delete()
+     ask = await bot.ask(user_id, text="**Send your custom button:**\nFormat: `[Channel][buttonurl:https://t.me/vj_botz]`")
+     
+     parsed = parse_buttons(ask.text)
+     if not parsed:
+        return await ask.reply("**❌ Invalid Format**", reply_markup=InlineKeyboardMarkup(back_btn))
+        
+     await update_configs(user_id, 'button', ask.text)
+     await ask.reply("**✅ Button Added**", reply_markup=InlineKeyboardMarkup(back_btn))
+
+  elif action == "seebutton":
+      data = await get_configs(user_id)
+      # Show the button as a preview
+      parsed = parse_buttons(data['button'])
+      # Add a back button to the preview
+      back = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", "settings#button")]])
+      await query.message.edit_text(f"<b>Preview:</b>\n{data['button']}", reply_markup=back) # Simply show text to avoid errors if button invalid
+
+  elif action == "deletebutton":
+     await update_configs(user_id, 'button', None)
+     await query.message.edit_text("**🗑 Button Deleted**", reply_markup=InlineKeyboardMarkup(back_btn))
+
   # --- Alerts ---
   elif action.startswith("alert"):
     alert_text = action.split('_')[1]
@@ -343,6 +454,7 @@ def extra_buttons():
         InlineKeyboardButton('💾 Max Size', callback_data='settings#maxfile_size')],
        [InlineKeyboardButton('🚥 Keywords', callback_data='settings#get_keyword'),
         InlineKeyboardButton('🕹 Extensions', callback_data='settings#get_extension')],
+       [InlineKeyboardButton('⚡ Button', callback_data='settings#button')],
        [InlineKeyboardButton('🔙 Back', callback_data='settings#main')]
    ]
    return InlineKeyboardMarkup(buttons)
