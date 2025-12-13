@@ -1,29 +1,17 @@
-
 import re
 import asyncio
 import logging
+import random
 from typing import Union, Optional, AsyncGenerator
-
-# --- Hydrogram Imports ---
-from hydrogram import Client, filters, types, enums
-from hydrogram.errors import (
-    FloodWait,
-    PhoneNumberInvalid,
-    PhoneCodeInvalid,
-    PhoneCodeExpired,
-    SessionPasswordNeeded,
-    PasswordHashInvalid
-)
+from hydrogram import Client
+from hydrogram.errors import FloodWait
 from hydrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
-
-# --- Custom Modules ---
 from database import db
 from config import Config
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-# --- Constants ---
 BTN_URL_REGEX = re.compile(r"(\[([^\[]+?)]\[buttonurl:/{0,2}(.+?)(:same)?])")
 
 class ClientManager: 
@@ -32,134 +20,55 @@ class ClientManager:
         self.api_hash = Config.API_HASH
 
     async def add_bot(self, bot, user_id):
-        """Add a forwarded bot token"""
-        prompt = (
-            "<b>🤖 Add Bot Mode</b>\n\n"
-            "1. Go to @BotFather\n"
-            "2. Create a new bot /newbot\n"
-            "3. Forward the message with the **API Token** to me.\n\n"
-            "<i>Type /cancel to stop.</i>"
-        )
+        prompt = "<b>🤖 Add Bot Mode</b>\nForward API Token from @BotFather."
         msg = await bot.ask(chat_id=user_id, text=prompt)
+        if msg.text == '/cancel': return await msg.reply('Cancelled!')
+        if not msg.forward_date: return await msg.reply("Error: Forward directly from BotFather.")
         
-        if msg.text == '/cancel':
-            return await msg.reply('<b>Process Cancelled!</b>')
-        
-        if not msg.forward_date:
-            return await msg.reply("<b>Error:</b> Please forward the message directly from BotFather.")
-        
-        if msg.forward_from and msg.forward_from.id != 93372553:
-             return await msg.reply("<b>Error:</b> This message is not from @BotFather.")
-
         bot_token_match = re.search(r'\d[0-9]{8,10}:[0-9A-Za-z_-]{35}', msg.text)
         bot_token = bot_token_match.group(0) if bot_token_match else None
+        if not bot_token: return await msg.reply("Error: Invalid Token.")
         
-        if not bot_token:
-            return await msg.reply("<b>Error:</b> Could not find a valid Bot Token.")
-
         try:
-            temp_client = Client("TempBot", api_id=self.api_id, api_hash=self.api_hash, bot_token=bot_token, in_memory=True)
-            await temp_client.start()
-            bot_info = temp_client.me
-            await temp_client.stop()
-        except Exception as e:
-            return await msg.reply(f"<b>Invalid Token:</b> `{e}`")
+            temp = Client("Temp", self.api_id, self.api_hash, bot_token=bot_token, in_memory=True)
+            await temp.start(); info = temp.me; await temp.stop()
+        except Exception as e: return await msg.reply(f"Invalid: {e}")
 
-        details = {
-            'id': bot_info.id,
-            'is_bot': True,
-            'user_id': user_id,
-            'name': bot_info.first_name,
-            'token': bot_token,
-            'username': bot_info.username 
-        }
-        await db.add_bot(details)
+        await db.add_bot({'id': info.id, 'is_bot': True, 'user_id': user_id, 'name': info.first_name, 'token': bot_token, 'username': info.username})
         return True
 
     async def add_session(self, bot, user_id):
-        """Add Userbot Session"""
-        disclaimer = (
-            "<b>⚠️ DISCLAIMER: Add Userbot</b>\n\n"
-            "<b>Enter your Phone Number (with Country Code):</b>\n"
-            "Example: `+919876543210`"
-        )
-        
+        disclaimer = "<b>Enter Phone Number:</b>\nExample: `+919876543210`"
         phone_msg = await bot.ask(chat_id=user_id, text=disclaimer)
-        if phone_msg.text == '/cancel':
-            return await phone_msg.reply('<b>Process Cancelled!</b>')
+        if phone_msg.text == '/cancel': return await phone_msg.reply('Cancelled!')
         
-        phone_number = phone_msg.text.strip()
-        client = Client(f"session_{user_id}", api_id=self.api_id, api_hash=self.api_hash, in_memory=True)
+        client = Client(f"s_{user_id}", self.api_id, self.api_hash, in_memory=True)
         await client.connect()
-        
         try:
-            status_msg = await phone_msg.reply("Sending OTP...")
+            code = await client.send_code(phone_msg.text.strip())
+            otp = await bot.ask(user_id, "Enter OTP (e.g. 1 2 3 4 5):", timeout=300)
+            if otp.text == '/cancel': return await otp.reply('Cancelled.')
             try:
-                code_data = await client.send_code(phone_number)
-            except PhoneNumberInvalid:
-                return await status_msg.edit('<b>Error:</b> Invalid Phone Number.')
-            except FloodWait as e:
-                return await status_msg.edit(f'<b>Error:</b> FloodWait. Try again in {e.value} seconds.')
-
-            otp_prompt = "<b>OTP Sent!</b>\nEnter code (e.g., `1 2 3 4 5`):"
-            otp_msg = await bot.ask(user_id, otp_prompt, timeout=300)
-            
-            if otp_msg.text == '/cancel': return await otp_msg.reply('Cancelled.')
-
-            phone_code = otp_msg.text.replace(" ", "")
-
-            try:
-                await client.sign_in(phone_number, code_data.phone_code_hash, phone_code)
-            except PhoneCodeInvalid:
-                return await otp_msg.reply('<b>Error:</b> Invalid OTP.')
-            except PhoneCodeExpired:
-                return await otp_msg.reply('<b>Error:</b> OTP Expired.')
+                await client.sign_in(phone_msg.text.strip(), code.phone_code_hash, otp.text.replace(" ", ""))
             except SessionPasswordNeeded:
-                pwd_msg = await bot.ask(user_id, '<b>Two-Step Verification Enabled.</b>\nEnter Password:', timeout=300)
-                if pwd_msg.text == '/cancel': return await pwd_msg.reply('Cancelled.')
-                try:
-                    await client.check_password(password=pwd_msg.text)
-                except PasswordHashInvalid:
-                    return await pwd_msg.reply('<b>Error:</b> Wrong Password.')
-
-            string_session = await client.export_session_string()
-            user_info = await client.get_me()
-
-            details = {
-                'id': user_info.id,
-                'is_bot': False,
-                'user_id': user_id,
-                'name': user_info.first_name,
-                'session': string_session,
-                'username': user_info.username
-            }
-            await db.add_userbot(details)
+                pwd = await bot.ask(user_id, "Enter 2FA Password:")
+                await client.check_password(password=pwd.text)
+            
+            sess = await client.export_session_string()
+            me = await client.get_me()
+            await db.add_userbot({'id': me.id, 'is_bot': False, 'user_id': user_id, 'name': me.first_name, 'session': sess, 'username': me.username})
             return True
-
         except Exception as e:
-            logger.error(f"Add Session Error: {e}")
-            await bot.send_message(user_id, f"<b>Error:</b> {e}")
+            await bot.send_message(user_id, f"Error: {e}")
         finally:
-            if client.is_connected:
-                await client.disconnect()
-
-# ==============================================================================
-#  Helper Functions
-# ==============================================================================
+            if client.is_connected: await client.disconnect()
 
 async def get_client(data, is_bot=True):
-    if is_bot:
-        return Client("WorkerBot", Config.API_ID, Config.API_HASH, bot_token=data, in_memory=True)
-    else:
-        return Client("WorkerUser", Config.API_ID, Config.API_HASH, session_string=data, in_memory=True)
+    if is_bot: return Client("WB", Config.API_ID, Config.API_HASH, bot_token=data, in_memory=True)
+    return Client("WU", Config.API_ID, Config.API_HASH, session_string=data, in_memory=True)
 
 async def iter_messages(client, chat_id, limit, offset=0, filters=None, max_size=None):
-    """
-    Super Optimized iterator with STRONG Anti-Flood delays
-    """
     current = offset
-    
-    # Batch size reduced to 100 to stay safer
     BATCH_SIZE = 100 
     
     while True:
@@ -171,14 +80,11 @@ async def iter_messages(client, chat_id, limit, offset=0, filters=None, max_size
         try:
             messages = await client.get_messages(chat_id, message_ids)
         except FloodWait as e:
-            # Smart Sleep: Wait longer if hit limit
-            wait_time = e.value + 5
-            logger.warning(f"FloodWait hit! Sleeping for {wait_time}s...")
-            await asyncio.sleep(wait_time)
+            wait = e.value + random.randint(10, 20) # Extra safety on FloodWait
+            logger.warning(f"FloodWait! Sleeping {wait}s")
+            await asyncio.sleep(wait)
             continue
-        except Exception as e:
-            logger.error(f"Error fetching messages: {e}")
-            return
+        except Exception: return
 
         if not messages: return
 
@@ -186,7 +92,6 @@ async def iter_messages(client, chat_id, limit, offset=0, filters=None, max_size
             current += 1
             if not message: continue
             
-            # Filter Logic
             is_filtered = False
             if filters:
                 for media in ['photo', 'video', 'document', 'audio', 'voice', 'sticker', 'animation']:
@@ -202,10 +107,9 @@ async def iter_messages(client, chat_id, limit, offset=0, filters=None, max_size
             if is_filtered: yield "FILTERED"
             else: yield message
         
-        # --- STRONG ANTI-FLOOD DELAY ---
-        # Increased to 3 seconds between batches. 
-        # Slower speed but safer from 28s bans.
-        await asyncio.sleep(3) 
+        # --- ULTRA SAFE DELAY (Fetching) ---
+        # 5 se 10 second ka random delay har batch ke baad
+        await asyncio.sleep(random.randint(5, 10))
 
 def parse_buttons(text, markup=True):
     if not text: return None
@@ -216,3 +120,4 @@ def parse_buttons(text, markup=True):
         else: buttons.append([btn])
     if markup and buttons: return InlineKeyboardMarkup(buttons)
     return buttons if buttons else None
+
