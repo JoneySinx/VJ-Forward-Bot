@@ -58,7 +58,7 @@
 ### Method 1: Deploy to Koyeb/Render/Heroku
 
 <p align="left">
-  <a href="https://app.koyeb.com/deploy?type=git&repository=github.com/YOUR_USERNAME/YOUR_REPO_NAME&branch=main&name=forward-bot">
+  <a href="https://app.koyeb.com/deploy?type=git&repository=github.com/joneysinx/forward&branch=main&name=forward-bot">
     <img src="https://www.koyeb.com/static/images/deploy/button.svg" alt="Deploy to Koyeb" width="180">
   </a>
 </p>
