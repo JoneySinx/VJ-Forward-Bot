@@ -1,3 +1,4 @@
+
 import re
 import asyncio
 import logging
@@ -31,7 +32,7 @@ class ClientManager:
         self.api_hash = Config.API_HASH
 
     async def add_bot(self, bot, user_id):
-        """Add a forwarded bot token (Fixed: Accepts user_id directly)"""
+        """Add a forwarded bot token"""
         prompt = (
             "<b>🤖 Add Bot Mode</b>\n\n"
             "1. Go to @BotFather\n"
@@ -47,7 +48,6 @@ class ClientManager:
         if not msg.forward_date:
             return await msg.reply("<b>Error:</b> Please forward the message directly from BotFather.")
         
-        # BotFather Check
         if msg.forward_from and msg.forward_from.id != 93372553:
              return await msg.reply("<b>Error:</b> This message is not from @BotFather.")
 
@@ -77,7 +77,7 @@ class ClientManager:
         return True
 
     async def add_session(self, bot, user_id):
-        """Add Userbot Session (Fixed: Accepts user_id directly)"""
+        """Add Userbot Session"""
         disclaimer = (
             "<b>⚠️ DISCLAIMER: Add Userbot</b>\n\n"
             "<b>Enter your Phone Number (with Country Code):</b>\n"
@@ -143,7 +143,9 @@ class ClientManager:
             if client.is_connected:
                 await client.disconnect()
 
-# --- Helper Functions ---
+# ==============================================================================
+#  Helper Functions
+# ==============================================================================
 
 async def get_client(data, is_bot=True):
     if is_bot:
@@ -152,19 +154,39 @@ async def get_client(data, is_bot=True):
         return Client("WorkerUser", Config.API_ID, Config.API_HASH, session_string=data, in_memory=True)
 
 async def iter_messages(client, chat_id, limit, offset=0, filters=None, max_size=None):
+    """
+    Super Optimized iterator with STRONG Anti-Flood delays
+    """
     current = offset
+    
+    # Batch size reduced to 100 to stay safer
+    BATCH_SIZE = 100 
+    
     while True:
-        batch_size = min(200, limit - current)
-        if batch_size <= 0: return
-        message_ids = list(range(current, current + batch_size + 1))
+        current_limit = min(BATCH_SIZE, limit - current)
+        if current_limit <= 0: return
+        
+        message_ids = list(range(current, current + current_limit + 1))
+        
         try:
             messages = await client.get_messages(chat_id, message_ids)
-        except Exception: return
+        except FloodWait as e:
+            # Smart Sleep: Wait longer if hit limit
+            wait_time = e.value + 5
+            logger.warning(f"FloodWait hit! Sleeping for {wait_time}s...")
+            await asyncio.sleep(wait_time)
+            continue
+        except Exception as e:
+            logger.error(f"Error fetching messages: {e}")
+            return
+
         if not messages: return
 
         for message in messages:
             current += 1
             if not message: continue
+            
+            # Filter Logic
             is_filtered = False
             if filters:
                 for media in ['photo', 'video', 'document', 'audio', 'voice', 'sticker', 'animation']:
@@ -176,8 +198,14 @@ async def iter_messages(client, chat_id, limit, offset=0, filters=None, max_size
                     for entity in entities:
                         if entity.type.name in ["URL", "TEXT_LINK"]:
                             is_filtered = True; break
+            
             if is_filtered: yield "FILTERED"
             else: yield message
+        
+        # --- STRONG ANTI-FLOOD DELAY ---
+        # Increased to 3 seconds between batches. 
+        # Slower speed but safer from 28s bans.
+        await asyncio.sleep(3) 
 
 def parse_buttons(text, markup=True):
     if not text: return None
