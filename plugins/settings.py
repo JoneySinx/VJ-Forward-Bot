@@ -1,7 +1,8 @@
+
 import asyncio 
 from hydrogram import Client, filters
 from hydrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
-from hydrogram.errors import MessageNotModified # Import added
+from hydrogram.errors import MessageNotModified
 
 # --- Custom Modules ---
 from database import db
@@ -40,13 +41,12 @@ async def update_configs(user_id, key, value):
         
     await db.update_configs(user_id, current)
 
-# --- Safe Edit Function (Fixes MessageNotModified Error) ---
 async def safe_edit(message, text, reply_markup):
     """Edits message safely, ignoring if content is unchanged"""
     try:
         await message.edit_text(text, reply_markup=reply_markup)
     except MessageNotModified:
-        pass # Ignore error if message is same
+        pass 
     except Exception as e:
         print(f"Edit Error: {e}")
 
@@ -60,7 +60,17 @@ async def settings_command(client, message):
    await message.reply_text(text, reply_markup=main_buttons())
 
 # ==============================================================================
-#  Callback Query Handler
+#  Handler for Close Button
+# ==============================================================================
+@Client.on_callback_query(filters.regex(r'^close_btn$'))
+async def close_handler(bot, query):
+    try:
+        await query.message.delete()
+    except Exception:
+        await query.answer("Closed")
+
+# ==============================================================================
+#  Callback Query Handler (Main Logic)
 # ==============================================================================
 
 @Client.on_callback_query(filters.regex(r'^settings'))
@@ -76,7 +86,7 @@ async def settings_query(bot, query):
      text = SETTINGS_HEADER + "<b>╰──╼ ᴄᴏɴғɪɢᴜʀᴇ ʏᴏᴜʀ ʙᴏᴛ</b>"
      await safe_edit(query.message, text, main_buttons())
 
-  # --- Extra Settings ---
+  # --- Extra Settings Menu (User Request) ---
   elif action == "extra":
        text = SUB_HEADER.format("ᴇxᴛʀᴀ sᴇᴛᴛɪɴɢs") + "<b>╰──╼ ᴀᴅᴠᴀɴᴄᴇᴅ ᴄᴏɴғɪɢs</b>"
        await safe_edit(query.message, text, extra_buttons())
@@ -101,13 +111,13 @@ async def settings_query(bot, query):
 
   elif action == "addbot":
      await query.message.delete()
-     status = await client_manager.add_bot(bot, user_id) # Fixed: Passed user_id
+     status = await client_manager.add_bot(bot, user_id) 
      if status:
         await query.message.reply_text("<b>✅ Bot Token Successfully Added!</b>", reply_markup=InlineKeyboardMarkup(back_btn))
 
   elif action == "adduserbot":
      await query.message.delete()
-     status = await client_manager.add_session(bot, user_id) # Fixed: Passed user_id
+     status = await client_manager.add_session(bot, user_id)
      if status:
         await query.message.reply_text("<b>✅ Userbot Session Added!</b>", reply_markup=InlineKeyboardMarkup(back_btn))
 
@@ -248,7 +258,7 @@ async def settings_query(bot, query):
      else:
         await query.edit_message_reply_markup(reply_markup=await filters_buttons(user_id))
 
-  # --- Size Limits ---
+  # --- Size Limits (Part of Extra) ---
   elif action.startswith("file_size") or action.startswith("maxfile_size"):
      settings = await get_configs(user_id)
      is_max = "max" in action
@@ -274,7 +284,7 @@ async def settings_query(bot, query):
      except Exception as e:
          print(f"Size Error: {e}")
 
-  # --- Keywords ---
+  # --- Keywords (Part of Extra) ---
   elif action == "get_keyword":
     keywords = (await get_configs(user_id))['keywords']
     text = SUB_HEADER.format("ᴋᴇʏᴡᴏʀᴅs")
@@ -297,7 +307,7 @@ async def settings_query(bot, query):
       await query.answer("All Keywords Removed", show_alert=True)
       await settings_query(bot, query)
 
-  # --- Extensions ---
+  # --- Extensions (Part of Extra) ---
   elif action == "get_extension":
     extensions = (await get_configs(user_id))['extension']
     text = SUB_HEADER.format("ᴇxᴛᴇɴsɪᴏɴs")
@@ -320,7 +330,7 @@ async def settings_query(bot, query):
       await query.answer("All Extensions Removed", show_alert=True)
       await settings_query(bot, query)
 
-  # --- Buttons ---
+  # --- Buttons (Part of Extra) ---
   elif action == "button":
      buttons = []
      data = await get_configs(user_id)
@@ -406,9 +416,11 @@ async def filters_buttons(user_id):
 async def next_filters_buttons(user_id):
   data = await get_configs(user_id)
   f = data['filters']
+  
   def btn(label, key, val):
       state = '✅' if val else '❌'
       return [InlineKeyboardButton(label, f'settings#alert_{label}'), InlineKeyboardButton(state, f'settings#updatefilter-{key}-{val}')]
+
   buttons = [
       btn('Voices', 'voice', f['voice']),
       btn('Animations', 'animation', f['animation']),
@@ -416,7 +428,7 @@ async def next_filters_buttons(user_id):
       btn('Skip Dup', 'duplicate', data['duplicate']),
       btn('Polls', 'poll', f['poll']),
       btn('Protect', 'protect', data['protect']),
-      btn('Links', 'link', f.get('link', True)), # Link Filter
+      btn('Links', 'link', f.get('link', True)),
       [InlineKeyboardButton('⫷ Back', 'settings#filters'), InlineKeyboardButton('Home 🏠', 'settings#main')]
   ]
   return InlineKeyboardMarkup(buttons)
